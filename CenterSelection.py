@@ -4,7 +4,7 @@
 import os
 import pandas as pd
 import numpy as np
-import math
+
 
 
 # Load the data of breast cancer and do the data wrangling
@@ -121,10 +121,39 @@ class Distance_martix:
                 distance_matrix[j,i] = distance_matrix[i,j]
         self.lin_matrix = np.float32(distance_matrix/ncol)
 
-    def Burnaby_matrix():
-        pass
-    def Eskin_matrix():
-        pass
+    def Burnaby_matrix(self):
+        # Make sure there are at least two values for each attribute
+        distance_matrix = np.zeros((nrow, nrow))
+        nrow_minus_freq = nrow - self.freq_frame
+        relative_freq = self.freq_frame / nrow
+        for i in range(nrow):
+            for j in range(i, nrow):
+                equal_indicator = (self.att.iloc[i] == self.att.iloc[j])
+                unequal_indicator =  1 - equal_indicator
+                freq_product = self.freq_frame.iloc[i] * self.freq_frame.iloc[j]
+                nrow_minus_freq_product = nrow_minus_freq.iloc[i] * nrow_minus_freq.iloc[j]
+                numerator_series =np.log(freq_product / nrow_minus_freq_product, dtype = 'f')
+                
+                denorminator_series = 2 * np.sum(np.log(1-relative_freq, dtype = 'f'), axis = 0)
+                
+                unequal_series = numerator_series / denorminator_series
+                unequal_series /= nrow
+                
+                distance_matrix[i,j] = np.sum(equal_indicator) + np.sum(unequal_indicator * unequal_series)
+                distance_matrix[j,i] = distance_matrix[i,j]
+                
+        self.burnaby_matrix = distance_matrix
+
+    def Eskin_matrix(self):
+        ni_frame = self.att.apply(set, axis= 0).apply(lambda x:len(x))
+        unequal_series = 2/(ni_frame.ni_frame)
+        distance_matrix = np.zeros((nrow, nrow))
+        for i in range(nrow):
+            for j in range(i,nrow):
+                unequal_indicator = (self.att.iloc[i] != self.att.iloc[j])
+                distance_matrix[i,j] = np.sum(unequal_indicator * unequal_series)
+                distance_matrix[j,i] = distance_matrix[i,j]
+        self.eskin_matrix = distance_matrix / ncol
     # Define the distances
 BC = Distance_martix(complete, attributes, categories)
 BC.Hamming_matrix()
@@ -135,8 +164,21 @@ BC.OF_matrix()
 BC.of_matrix[:5, :5]
 BC.Lin_matrix()
 BC.lin_matrix[:5, :5]
-a =  np.array([[1,2,3], [4,5,6]])
+a =  pd.DataFrame([[1,2,3], [4,5,6]])
+a.iloc[0] != a.iloc[1]
 np.log(a)
 r = np.log(a, dtype='f')
 type(r)
 type(np.log(5, dtype='f'))
+
+frame = df_att.apply(set, axis= 0).apply(lambda x:len(x))
+2/(frame*frame)
+
+
+
+
+
+
+
+
+
