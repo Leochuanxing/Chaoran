@@ -5,30 +5,27 @@ import os
 import pandas as pd
 import numpy as np
 
-
+'''################################################################################'''
 
 # Load the data of breast cancer and do the data wrangling
-os.chdir('/home/leo/Documents/Project_SelectCenters/DATA/BreastCancer')
-data = pd.read_csv('breast-cancer-wisconsin.data')
-data.dtypes
-col_name = data.columns
+def Wrangling_BC():
+    os.chdir('/home/leo/Documents/Project_SelectCenters/DATA/BreastCancer')
+    data = pd.read_csv('breast-cancer-wisconsin.data')
 
-missing = data[:][data[col_name[6]] == '?']
-missing.shape
-complete = data[:][data[col_name[6]] != '?']
-complete[col_name[6]] = complete[col_name[6]].astype(np.int64)
+    col_name = data.columns
 
-attributes = col_name[1:10]
-categories = col_name[-1]
-
-df_att = complete[attributes]
-nrow, ncol = df_att.shape
-distance_matrix = np.zeros((nrow, nrow))
-df_att.head()
-complete.head()
+    complete = data[:][data[col_name[6]] != '?']
+    complete[col_name[6]] = complete[col_name[6]].astype(np.int64)
+    
+    attributes = col_name[1:10]
+    categories = col_name[-1]
+    
+    df_att = complete[attributes]
+    
+    return df_att, attributes, categories
 
 # independent test
-col = df_att[attributes[0]]
+#col = df_att[attributes[0]]
 def Frequency_distinct(col):
     distinct_values = list(set(col))
     df_element = pd.DataFrame({'d_values':[], 'freq':[]})
@@ -40,23 +37,49 @@ def Frequency_distinct(col):
         
     return freq_col
 
-freq_df = df_att.apply(Frequency_distinct, axis = 0)
-freq_array_log = np.log(freq_df)
-freq_array_log.iloc[:5, :5]
-head = freq_array_log.head()/ncol
+#freq_df = df_att.apply(Frequency_distinct, axis = 0)
+#freq_array_log = np.log(freq_df)
+#freq_array_log.iloc[:5, :5]
+#head = freq_array_log.head()/ncol
+#
+#np.sum(freq_array_log.iloc[1]*freq_array_log.iloc[2])/ncol
+#
+#freq_df.head()
+#df_att.head()
+#np.sum(df_att['1.1'] == 8)
+#df_att.iloc[1].equals(df_att.iloc[3])
+'''
+Generate a small data set to test the following functions
+'''
+def Small_sample(size = 10):
+    att1 = ['A', 'B']
+    att2 = [1,2,3]
+    att3 = ['D', 'E','F']
+    label = ['y1', 'y2']
+    # Randomly assign the values
+    att1_v = np.random.choice(att1, size)
+    att2_v = np.random.choice(att2, size)
+    att3_v = np.random.choice(att3, size)
+    label_v = np.random.choice(label, size)
+    # Combine them into a data frame
+    sample_data = pd.DataFrame({'att1':att1_v, 'att2':att2_v, 'att3': att3_v, 'label':label_v})
+    return sample_data
 
-np.sum(freq_array_log.iloc[1]*freq_array_log.iloc[2])/ncol
-
-freq_df.head()
-df_att.head()
-np.sum(df_att['1.1'] == 8)
-df_att.iloc[1].equals(df_att.iloc[3])
-
-
+small_sample = Small_sample(size=10)
+small_sample
 
 '''
+#######################################################################################
 Preparation is for data wrangling and calculate the distance matrix according to the
 selected distance
+*******************************************************************************
+Inputs:
+    data_frame: The training data frame
+    attributes: a list gives the names of the attributes used as explatary variables, which are consistant
+                with  the names of the columns.
+    categories: a list contains the names of the columns of the labels.
+Outputs:
+    different types of distance matrices
 '''
 class Distance_martix:
     def __init__(self, data_frame, attributes, categories):
@@ -64,15 +87,16 @@ class Distance_martix:
         self.cate = data_frame[categories]
         nrow, ncol = self.att.shape
     def Hamming_matrix(self):
-        
+        nrow, ncol = self.att.shape
         distance_matrix = np.zeros((nrow, nrow))
         for i in range(nrow):
             for j in range(i, nrow):
-                distance_matrix[i,j] = np.sum(df_att.iloc[i] != df_att.iloc[j])
+                distance_matrix[i,j] = np.sum(self.att.iloc[i] != self.att.iloc[j])
                 distance_matrix[j,i] = distance_matrix[i,j]
         self.hamming_matrix = distance_matrix/ncol
         
     def IOF_matrix(self):
+        nrow, ncol = self.att.shape
         freq_frame = self.att.apply(Frequency_distinct, axis = 0)
         freq_frame_log = np.log(freq_frame, dtype = 'f')
         self.freq_frame = freq_frame
@@ -89,6 +113,7 @@ class Distance_martix:
         self.iof_matrix = np.float32(distance_matrix/ncol)
 
     def OF_matrix(self):
+        nrow, ncol = self.att.shape
         logk = np.log(nrow, dtype='f')
         distance_matrix = np.zeros((nrow, nrow))
         frame_log_f_div_k = self.freq_frame_log - logk
@@ -102,6 +127,7 @@ class Distance_martix:
                 self.of_matrix = np.float32(distance_matrix/ncol)
 
     def Lin_matrix(self):
+        nrow, ncol = self.att.shape
         distance_matrix = np.zeros((nrow, nrow))
         frame_log_f_div_k = self.frame_log_f_div_k 
         
@@ -122,6 +148,7 @@ class Distance_martix:
         self.lin_matrix = np.float32(distance_matrix/ncol)
 
     def Burnaby_matrix(self):
+        nrow, ncol = self.att.shape
         # Make sure there are at least two values for each attribute
         distance_matrix = np.zeros((nrow, nrow))
         nrow_minus_freq = nrow - self.freq_frame
@@ -145,6 +172,7 @@ class Distance_martix:
         self.burnaby_matrix = distance_matrix
 
     def Eskin_matrix(self):
+        nrow, ncol = self.att.shape
         ni_frame = self.att.apply(set, axis= 0).apply(lambda x:len(x))
         unequal_series = 2/(ni_frame.ni_frame)
         distance_matrix = np.zeros((nrow, nrow))
@@ -155,27 +183,106 @@ class Distance_martix:
                 distance_matrix[j,i] = distance_matrix[i,j]
         self.eskin_matrix = distance_matrix / ncol
     # Define the distances
-BC = Distance_martix(complete, attributes, categories)
-BC.Hamming_matrix()
-BC.IOF_matrix()
-BC.iof_matrix[:5, :5]
-BC.iof_matrix.dtype
-BC.OF_matrix()
-BC.of_matrix[:5, :5]
-BC.Lin_matrix()
-BC.lin_matrix[:5, :5]
-a =  pd.DataFrame([[1,2,3], [4,5,6]])
-a.iloc[0] != a.iloc[1]
-np.log(a)
-r = np.log(a, dtype='f')
-type(r)
-type(np.log(5, dtype='f'))
+attributes = ['att1', 'att2', 'att3']
+categories = ['label']
+SS = Distance_martix(small_sample, attributes, categories)
+SS.Hamming_matrix()
+SS.hamming_matrix
 
-frame = df_att.apply(set, axis= 0).apply(lambda x:len(x))
-2/(frame*frame)
+'''#################################################################################'''
+'''
+**************************************************************************************
+CS_coverage_all: a function to find the oder of the centers to be eliminated and the corresponding 
+                cutoff distances
+Inputs:
+    distance_matrix
+    
+Outputs:
+    eliminated: a list, gives the indices, corresponding to the rows, to be removed, so that the leftovers
+                can be used as centers
+    radius: a list, gives the cutoff distances that corresponding to the elements in the eliminated.
+    
+For example:
+    eliminated = [1,2,3], radius = [1, 1, 2]
+    Means: to remove center corresponding to row 1, the cutoff distance need to be 1.
+           to remove center corresponding to row 2, the cutoff distance need to be 1.
+           to remove center corresponding to row 3, the cutoff distance need to be 2.
+'''
+def CS_coverage_all(distance_matrix):
+    l = list(np.ndenumerate(distance_matrix))
+    # get rid of the diagonal elements
+    l_sub = [x for x in l if x[0][0] != x[0][1]]
+    # arrange the distance in the increasing order
+    l_sub.sort(key = lambda x:x[1])
 
+    eliminated = []; radius = []
+    while l_sub !=[]:
+        eliminated.append(l_sub[0][0][1])
+        radius.append(l_sub[0][1])
+        # update l_sub
+        l_sub = [x for x in l_sub if x[0][0] != l_sub[0][0][1] and x[0][1] != l_sub[0][0][1]]
+        
+    return eliminated, radius
 
+'''
+Design_matrix_coverage_by_nCenters: find centers with the size equal to nCenters
 
+Inputs:
+        distance_matrix: as above
+        eliminated: as above
+        nCenters: integer, the number of centers
+Outputs:
+    design_matrix: a submatrix of the distance matrix, with the rows corresponding to the
+                    samples and the columns corresponding to the selected centers
+'''
+def Design_matrix_coverage_by_nCenters(distance_matrix, eliminated, nCenters):
+    nrow, _ = distance_matrix.shape
+    to_be_del = eliminated[:nrow - nCenters]
+    design_matrix = np.delete(distance_matrix, to_be_del, axis=1)
+    return design_matrix
+
+'''
+Design_matrix_coverage_by_radius: find centers with the size equal to nCenters
+
+Inputs:
+        distance_matrix: as above
+        eliminated: as above
+        radius: as above
+        cutoff: float, gives the cutoff distance. For each center, any sample with 
+            the distance from it no larger than cutoff will not be selected as a center.
+Outputs:
+    design_matrix: a submatrix of the distance matrix, with the rows corresponding to the
+                    samples and the columns corresponding to the selected centers
+'''
+
+def Design_matrix_coverage_by_radius(distance_matrix, eliminated, radius, cutoff):
+    nrow, _ = distance_matrix.shape
+    to_be_del = []
+    for ind, v in enumerate(radius):
+        if v <= cutoff:
+            to_be_del.append(eliminated[ind])
+    design_matrix = np.delete(distance_matrix, to_be_del, axis=1)
+    return design_matrix
+
+eliminated, radius = CS_coverage_all(SS.hamming_matrix)
+design_matrix = Design_matrix_coverage_by_nCenters(SS.hamming_matrix, eliminated, 3)
+design_matrix_by_r = Design_matrix_coverage_by_radius(SS.hamming_matrix, eliminated, radius, cutoff = 0.7)
+#design_matrix.shape
+#design_matrix_by_r.shape
+'''#################################################################################'''
+'''
+This function should return the loss and the gradient
+'''
+def Loss_Softmax(design_matrix, labels):
+    pass
+def Loss_SumSquares(design_matrix, observed):
+    pass
+'''#################################################################################'''
+def One_step_train():
+    pass
+'''#################################################################################'''
+def CS_Coeff():
+    pass
 
 
 
