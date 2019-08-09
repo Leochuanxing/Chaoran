@@ -189,8 +189,34 @@ SS = Distance_martix(small_sample, attributes, categories)
 SS.Hamming_matrix()
 SS.hamming_matrix
 
-'''#################################################################################'''
+
 '''
+##########################################################################################3
+****************************************************************************************8
+         DEFINE THE RADIAL BASIS FUNCTIONS
+         
+RBF: the radial basis function
+'''
+def Thin_Plate_Spline(d):
+    d += 0.001 # make sure the returned values is not overflown
+    return d**2 * np.log(d)
+
+def Gaussian(distance, radius):
+    return np.exp(-distance**2/radius**2)
+    
+def Markov(distance, radius):
+    return np.exp(-distance/radius)  
+
+def Inverse_Multi_Quadric(distance,c, beta):
+    return (distance**2 + c**2)**(-beta) 
+
+design_mat = Gaussian(SS.hamming_matrix, 1)
+design_mat[:5, :5]
+SS.hamming_matrix[:5, :5]
+np.exp(-0.3333333**2)
+'''#################################################################################
+            CALCULATE THE DESIGN MATRIX FOR CENTERS SELECTED BY COVERAGE METHOD
+
 **************************************************************************************
 CS_coverage_all: a function to find the oder of the centers to be eliminated and the corresponding 
                 cutoff distances
@@ -235,11 +261,21 @@ Outputs:
     design_matrix: a submatrix of the distance matrix, with the rows corresponding to the
                     samples and the columns corresponding to the selected centers
 '''
-def Design_matrix_coverage_by_nCenters(distance_matrix, eliminated, nCenters):
+def Design_matrix_coverage_by_nCenters(distance_matrix, eliminated, nCenters, RBF = 'Gaussian'):
     nrow, _ = distance_matrix.shape
     to_be_del = eliminated[:nrow - nCenters]
-    design_matrix = np.delete(distance_matrix, to_be_del, axis=1)
-    return design_matrix
+    sample_center_dist_mat = np.delete(distance_matrix, to_be_del, axis=1)
+    
+    if RBF == 'Gaussian':
+        design_matrix = Gaussian(sample_center_dist_mat, radius = 1)
+    elif RBF == 'Markov':
+        design_matrix = Markov(sample_center_dist_mat, radius = 1)
+    elif RBF == 'Thin_Plate_Spline':
+        design_matrix = Thin_Plate_Spline(sample_center_dist_mat)
+    elif RBF == 'Inverse_Multi_Quadric':
+        design_matrix = Inverse_Multi_Quadric(sample_center_dist_mat, c = 0.5, beta=1)
+        
+    return design_matrix, sample_center_dist_mat
 
 '''
 Design_matrix_coverage_by_radius: find centers with the size equal to nCenters
@@ -255,27 +291,102 @@ Outputs:
                     samples and the columns corresponding to the selected centers
 '''
 
-def Design_matrix_coverage_by_radius(distance_matrix, eliminated, radius, cutoff):
+def Design_matrix_coverage_by_radius(distance_matrix, eliminated, radius, cutoff, RBF = 'Gaussian'):
     nrow, _ = distance_matrix.shape
     to_be_del = []
     for ind, v in enumerate(radius):
         if v <= cutoff:
             to_be_del.append(eliminated[ind])
-    design_matrix = np.delete(distance_matrix, to_be_del, axis=1)
-    return design_matrix
+    sample_center_dist_mat = np.delete(distance_matrix, to_be_del, axis=1)
+    
+    if RBF == 'Gaussian':
+        design_matrix = Gaussian(sample_center_dist_mat, radius = 1)
+    elif RBF == 'Markov':
+        design_matrix = Markov(sample_center_dist_mat, radius = 1)
+    elif RBF == 'Thin_Plate_Spline':
+        design_matrix = Thin_Plate_Spline(sample_center_dist_mat)
+    elif RBF == 'Inverse_Multi_Quadric':
+        design_matrix = Inverse_Multi_Quadric(sample_center_dist_mat, c = 0.5, beta=1)
+    return design_matrix, sample_center_dist_mat
 
 eliminated, radius = CS_coverage_all(SS.hamming_matrix)
-design_matrix = Design_matrix_coverage_by_nCenters(SS.hamming_matrix, eliminated, 3)
-design_matrix_by_r = Design_matrix_coverage_by_radius(SS.hamming_matrix, eliminated, radius, cutoff = 0.7)
-#design_matrix.shape
-#design_matrix_by_r.shape
-'''#################################################################################'''
+design_matrix, _ = Design_matrix_coverage_by_nCenters(SS.hamming_matrix, eliminated, 3, RBF = 'Gaussian')
+design_matrix_by_r,_ = Design_matrix_coverage_by_radius(SS.hamming_matrix, eliminated, radius, cutoff = 0.7, RBF = 'Gaussian')
+n_row, n_col = design_matrix.shape
+design_matrix_by_r.shape
+design_matrix
+design_matrix_by_r
+SS.cate
+SS.cate.loc[SS.cate.label == 'y1'] = 0
+SS.cate.loc[SS.cate.label == 'y2'] = 1
+coefficients = 0.1 * np.random.randn(n_col, 2)
+coefficients
+logit = design_matrix.dot(coefficients)
+logit
+prob = 1/(1+np.exp(-logit))
+loss = np.average(- np.log(prob) * SS.cate - (1 - SS.cate) * np.log(1 - prob))
+logit -= np.max(logit, axis = 1, keepdims = True) 
+logit
+'''#################################################################################
+****************************************************************************************
+                CALCULATE THE LOSS AND THE GRADIENTS
+                
+
+Loss_Sigmoid: Use the sigmoid as the loss function
+Inputs:
+    design_matrix: as above
+    labels: an array corresponding to the rows of the design_matrix,
+            with values of either 0 or 1.
+    coefficients: an array contains the coeffients
+    reg: the coefficient of regularization
+Outputs:
+    loss: float
+    grad_coefficients: an array containing all the gradients corresopnding to the coefficients
 '''
-This function should return the loss and the gradient
-'''
-def Loss_Softmax(design_matrix, labels):
-    pass
-def Loss_SumSquares(design_matrix, observed):
+def Loss_Sigmoid(design_matrix, labels, coefficients, reg):
+    
+    nrow, ncol = design_matrix.shape
+    
+    logit = design_matrix.dot(coefficients)
+    prob = 1/(1+np.exp(-logit))
+    loss = np.average(- np.log(prob) * labels - (1 - labels) * np.log(1 - prob))
+    # plus the regularization
+    loss += reg * coefficients * coefficients
+    
+    # Calculate the gradient from the first part of loss
+    grad_logit = prob - labels
+    grad_coefficients = (design_matrix.T).dot(grad_logit)
+    grad_coefficients /= nrow
+    # Calculate the gradient from the regularizatio part
+    grad_coefficients += 0.5 * reg * coefficients
+    
+    # return the above results
+    return loss, grad_coefficients
+
+def Loss_Softmax(design_matrix, labels, coefficients, reg):
+    
+    nrow, ncol = design_matrix.shape
+    
+    Wx = design_matrix.dot(coefficients)
+    # Make sure the elements in Wx is not too big or too small
+    Wx -= np.max(Wx, axis = 1, keepdims = True)
+    # Calculate the probabilities
+    exp = np.exp(Wx)
+    prob = exp / np.sum(exp, axis = 1, keepdims = True)
+    # Calculate  the loss
+    loss = np.sum(prob * labels)/nrow
+    loss += reg * np.sum(coefficients * coefficients)
+    
+    # Calculate the gradients
+    grad_Wx = prob - labels
+    grad_coefficients = (design_matrix.T).dot(grad_Wx)
+    grad_coefficients /= nrow
+    
+    grad_coefficients += 2 * coefficients
+    
+    return loss, grad_coefficients
+    
+def Loss_SumSquares(design_matrix, observed, coefficients, reg):
     pass
 '''#################################################################################'''
 def One_step_train():
