@@ -330,15 +330,16 @@ logit
 '''#################################################################################
 ****************************************************************************************
                 CALCULATE THE LOSS AND THE GRADIENTS
-                
+
+Suppose: design_matrix is of dimension (m,n)                
 
 Loss_Sigmoid: Use the sigmoid as the loss function
 Inputs:
     design_matrix: as above
     labels: an array corresponding to the rows of the design_matrix,
-            with values of either 0 or 1.
-    coefficients: an array contains the coeffients
-    reg: the coefficient of regularization
+            with values of either 0 or 1. labels.shape = (m, 1)
+    coefficients: an array contains the coeffients, coefficients.shape = (n, 1)
+    reg: a float, the coefficient of regularization
 Outputs:
     loss: float
     grad_coefficients: an array containing all the gradients corresopnding to the coefficients
@@ -362,7 +363,18 @@ def Loss_Sigmoid(design_matrix, labels, coefficients, reg):
     
     # return the above results
     return loss, grad_coefficients
-
+'''
+Loss_Softmax: this function applies to the case when the output classes are more than 2
+Input:
+    design_matrix: as above
+    labels: a matrix of dimension (m, k), where k is the number of classes. The label of
+            each sample is a vector of dimenion (1, k), and the values are either 0 or 1, with
+            1 indicate the correct category.
+    coefficients: a matrix of dimension (n,k)
+    reg: as above
+Output:
+    similar as above
+'''
 def Loss_Softmax(design_matrix, labels, coefficients, reg):
     
     nrow, ncol = design_matrix.shape
@@ -385,16 +397,144 @@ def Loss_Softmax(design_matrix, labels, coefficients, reg):
     grad_coefficients += 2 * coefficients
     
     return loss, grad_coefficients
-    
+'''
+Loss_SumSquares: the loss is measured by the sum of the sequares of the difference 
+                between the predicted values and the observed values
+Inputs:
+    observed: an array of shape (m,1). with each element a float.
+    design_matrix, coefficients and reg are the same as above
+Outputs:
+    the same as above
+'''    
 def Loss_SumSquares(design_matrix, observed, coefficients, reg):
-    pass
+    
+    nrow, ncol = design_matrix.shape
+    
+    # Calculate the loss
+    pred = design_matrix.dot(coefficients)
+    loss = np.average((pred - observed) * (pred - observed))
+    
+    loss += reg * np.sum(coefficients * coefficients)
+    
+    # Calculate the gradient
+    
+    grad_coefficients = (design_matrix.T).dot(2 * (pred - observed))
+    grad_coefficients /= nrow
+    grad_coefficients += 2 * reg * coefficients
+    
+    return loss, grad_coefficients
+'''
+Integrate the above functions into one function for convenient usage.
+'''
+def Loss(train_para):
+    design_matrix = train_para['design_matrix'] 
+    observed = train_para['observed']
+    reg = train_para['reg']
+    coefficients = train_para['coefficients']
+    loss_type = train_para['loss_type']
+    if loss_type == 'Sigmoid':
+        loss, grad_coefficients = Loss_Sigmoid(design_matrix, observed, coefficients, reg)
+    elif loss_type == 'Softmax':
+        loss, grad_coefficients = Loss_Softmax(design_matrix, observed, coefficients, reg)
+    elif loss_type == 'SumSquares':
+        loss, grad_coefficients = Loss_SumSquares(design_matrix, observed, coefficients, reg)
+    return loss, grad_coefficients
 '''#################################################################################'''
-def One_step_train():
-    pass
+'''
+Train_GD: train the model by using gradient descent
+Inputs:
+    gd_train_para: a dictionary, contains
+        reg: coefficients of regularization
+        setp_size: a float
+        loss_type: string, gives types of different loss functions
+        design_matrix:
+        observed: observed values, the format of which decides the type of loss functions
+Outputs:  
+    coefficients: a matrix of shape (design_matrix.shape[0], observed.shape[1])
+                    the values of the coefficients after n_iterations training      
+'''
+def Train_GD(gd_train_para):
+    # Take out the parameters
+    design_matrix = gd_train_para['design_matrix'] 
+    observed = gd_train_para['observed']
+    reg = gd_train_para['reg']
+    step_size = gd_train_para['step_size']
+    loss_type = gd_train_para['loss_type']
+    n_iterations = gd_train_para['n_iterations']
+    # initiate the coefficients
+    coefficients = np.random.randn(design_matrix.shape[0], observed.shape[1])
+    
+    if loss_type == 'Sigmoid':
+        for i in range(n_iterations):
+            loss, grad_coefficients = Loss_Sigmoid(design_matrix, observed, coefficients, reg)
+            # update the coefficients
+            coefficients -= step_size * grad_coefficients
+            '''Do we print the loss'''
+            print(round(loss, 6))
+            
+    return coefficients
+ 
+
+def Train_RBFN_BFGS(distance_matrix, observed_values, rho=0.8, c = 1e-3, termination = 1e-2,\
+                    parameter_inheritance = False, parameter=None, basis_function = 'Gaussian'):
+    
+    nrow, ncol = np.shape(distance_matrix)[0]
+        
+    # Give the initial Hessian H. The variables are the coeff and reg
+    H = np.eye(ncol)/(10*nrow)
+#    H = np.eye(ncol+1)/(10*nrow)
+    # Check if it inherit the parameter from somewhere else.
+    if not parameter_inheritance :
+        # Set the starting point
+        parameter = {}
+#        parameter['coeff'] = np.ones((2*ncol+1,1))
+        parameter['coeff'] = np.ones((2*ncol+1,1))
+        #The reg should not be negative. It is better that reg > delta, a small positive number
+#        parameter['reg'] = reg
+
+    # BFGS algorithm
+    loss, gradient = Loss(distance_matrix, observed_values, parameter, basis_function)
+    grad_coeff = gradient['coeff']
+    ternination_square = termination**2
+    grad_square = ternination_square + 1
+#    grad_square = (grad_coeff.T).dot(grad_coeff)
+    while grad_square >= ternination_square:        
+        p = - H.dot(grad_coeff)        
+        # Find the next coeff
+        parameter_new = {}
+        parameter_new['coeff'] = p + parameter['coeff']
+        parameter_new['reg'] = parameter['reg']
+        
+        new_loss, new_gradient = Loss(distance_matrix, observed_values, parameter_new, basis_function)
+        # Ramijo Back-tracking
+        while new_loss > loss + c * (grad_coeff.T).dot(p):
+            p *= rho
+            parameter_new['coeff'] = p + parameter['coeff']            
+            new_loss, new_gradient = Loss(distance_matrix, observed_values, parameter_new, basis_function)
+        
+        # update H
+        s = p
+        new_grad = new_gradient['coeff']
+        y = new_grad - grad_coeff
+        r = (y.T).dot(s)
+        I = np.eye(2*ncol+1)
+#        I = np.eye(ncol+1)
+        if r != 0:
+            r = 1/r            
+            H = (I - r*s.dot(y.T)).dot(H).dot(I - r*y.dot(s.T)) + r*s.dot(s.T)# Can be accelerate
+        else:
+            H = I
+        # Update loss, grad, grad_square and paramter
+        loss = new_loss
+        grad_coeff = new_grad
+        parameter['coeff'] = parameter_new['coeff']
+        grad_square = (grad_coeff.T).dot(grad_coeff)
+        print('loss  ', loss, '    ','grad_square   ', grad_square)
+        
+    return parameter, loss
 '''#################################################################################'''
 def CS_Coeff():
     pass
-
 
 
 
