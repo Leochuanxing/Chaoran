@@ -4,6 +4,7 @@
 import os
 import pandas as pd
 import numpy as np
+import copy
 
 '''################################################################################'''
 
@@ -65,8 +66,10 @@ small_sample
 RBF: the radial basis function
 '''
 def Thin_Plate_Spline(d):
-    d += 0.001 # make sure the returned values is not overflown
-    return d**2 * np.log(d)
+    if d == 0:
+        return 0
+    else:
+        return d**2 * np.log(d)
 
 def Gaussian(distance, radius):
     return np.exp(-distance**2/radius**2)
@@ -234,13 +237,19 @@ SS.eskin_matrix
 '''
 def Split_dist_matrix(distance_matrix, design_matrix, train_ind, test_ind):
     
-    train_distance_matrix = distance_matrix[train_ind, train_ind]
-    test_distance_matrix = distance_matrix[test_ind, train_ind]
-    train_design_matrix = design_matrix[train_ind, train_ind]
-    test_design_matrix = design_matrix[test_ind, train_ind]
+    train_distance_matrix = distance_matrix[train_ind, :][:, train_ind]
+    test_distance_matrix = distance_matrix[test_ind, :][:, train_ind]
+    train_design_matrix = design_matrix[train_ind, :][:, train_ind]
+    test_design_matrix = design_matrix[test_ind, :][:, train_ind]
     
     return train_design_matrix, test_design_matrix, train_distance_matrix, test_distance_matrix
-
+distance_matrix = SS.hamming_matrix
+design_matrix = Design_matrix(distance_matrix, RBF = 'Gaussian')
+train_design_matrix, test_design_matrix, train_distance_matrix, test_distance_matrix = \
+                Split_dist_matrix(distance_matrix, design_matrix, list(range(8)), [8,9])
+'''****************************************************************************************
+********************************************************************************************
+All the above functions have been verified by  22:00 Aug.10th'''
 '''#################################################################################
             CALCULATE THE DESIGN MATRIX FOR CENTERS SELECTED BY COVERAGE METHOD
 
@@ -325,24 +334,19 @@ def Design_matrix_coverage_by_radius(train_design_matrix, test_design_matrix, el
     return sub_train_dm, sub_test_dm
 '''We should return the centers which will be used in testing'''
 
-eliminated, radius = CS_coverage_all(SS.hamming_matrix)
-design_matrix, _ = Design_matrix_coverage_by_nCenters(SS.hamming_matrix, eliminated, 3, RBF = 'Gaussian')
-design_matrix_by_r,_ = Design_matrix_coverage_by_radius(SS.hamming_matrix, eliminated, radius, cutoff = 0.7, RBF = 'Gaussian')
-n_row, n_col = design_matrix.shape
-design_matrix_by_r.shape
-design_matrix
-design_matrix_by_r
-SS.cate
+eliminated, radius = CS_coverage_all(train_distance_matrix)
+train_center_dm, test_center_dm = Design_matrix_coverage_by_nCenters(train_design_matrix,test_design_matrix, eliminated, 3)
+train_center_dm.shape
+test_center_dm.shape
+train_center_dm_by_r, test_center_dm_by_r = Design_matrix_coverage_by_radius(train_design_matrix,test_design_matrix, eliminated,radius, cutoff = 0.7)
+
 SS.cate.loc[SS.cate.label == 'y1'] = 0
 SS.cate.loc[SS.cate.label == 'y2'] = 1
-coefficients = 0.1 * np.random.randn(n_col, 2)
-coefficients
-logit = design_matrix.dot(coefficients)
-logit
-prob = 1/(1+np.exp(-logit))
-loss = np.average(- np.log(prob) * SS.cate - (1 - SS.cate) * np.log(1 - prob))
-logit -= np.max(logit, axis = 1, keepdims = True) 
-logit
+observed = SS.cate
+observed_train = observed.iloc[list(range(8))]
+observed_test = observed.iloc[[8,9]]
+observed_test
+observed_train
 '''#################################################################################
 ****************************************************************************************
                 CALCULATE THE LOSS AND THE GRADIENTS
@@ -368,14 +372,14 @@ def Loss_Sigmoid(design_matrix, labels, coefficients, reg):
     prob = 1/(1+np.exp(-logit))
     loss = np.average(- np.log(prob) * labels - (1 - labels) * np.log(1 - prob))
     # plus the regularization
-    loss += reg * coefficients * coefficients
+    loss += reg * np.sum(coefficients * coefficients)
     
     # Calculate the gradient from the first part of loss
     grad_logit = prob - labels
     grad_coefficients = (design_matrix.T).dot(grad_logit)
     grad_coefficients /= nrow
     # Calculate the gradient from the regularizatio part
-    grad_coefficients += 0.5 * reg * coefficients
+    grad_coefficients += 2 * reg * coefficients
     
     # return the above results
     return loss, grad_coefficients
@@ -386,7 +390,8 @@ Input:
     labels: a matrix of dimension (m, k), where k is the number of classes. The label of
             each sample is a vector of dimenion (1, k), and the values are either 0 or 1, with
             1 indicate the correct category.
-    coefficients: a matrix of dimension (n,k)
+    coefficients: a matrix of dimension (n*k, 1). For the convenience of latter usage,  we don't use the shape(n, k).
+                    When (n,k) is reshaped into (n*k,1), we stack column by column.
     reg: as above
 Output:
     similar as above
@@ -394,6 +399,8 @@ Output:
 def Loss_Softmax(design_matrix, labels, coefficients, reg):
     
     nrow, ncol = design_matrix.shape
+    # Reshape the coefficients
+    coefficients = coefficients.reshape((-1, ncol)).T
     
     Wx = design_matrix.dot(coefficients)
     # Make sure the elements in Wx is not too big or too small
@@ -401,8 +408,10 @@ def Loss_Softmax(design_matrix, labels, coefficients, reg):
     # Calculate the probabilities
     exp = np.exp(Wx)
     prob = exp / np.sum(exp, axis = 1, keepdims = True)
+    
+    log_prob = np.log(prob)
     # Calculate  the loss
-    loss = np.sum(prob * labels)/nrow
+    loss = np.sum(- log_prob * labels)/nrow
     loss += reg * np.sum(coefficients * coefficients)
     
     # Calculate the gradients
@@ -410,7 +419,9 @@ def Loss_Softmax(design_matrix, labels, coefficients, reg):
     grad_coefficients = (design_matrix.T).dot(grad_Wx)
     grad_coefficients /= nrow
     
-    grad_coefficients += 2 * coefficients
+    grad_coefficients += 2 * reg * coefficients
+    
+    grad_coefficients = grad_coefficients.T.reshape((-1, 1))
     
     return loss, grad_coefficients
 '''
@@ -457,6 +468,8 @@ def Loss(train_para):
     elif loss_type == 'SumSquares':
         loss, grad_coefficients = Loss_SumSquares(design_matrix, observed, coefficients, reg)
     return loss, grad_coefficients
+
+
 '''#################################################################################'''
 '''
 Train_GD: train the model by using gradient descent
@@ -478,27 +491,26 @@ def Train_GD(train_para):
 #    reg = train_para['reg']
     step_size = train_para['step_size']
 #    loss_type = gd_train_para['loss_type']
-    n_iterations = train_para['n_iterations']
-    train_para['coefficients'] = coefficients
-    
+    n_iterations = train_para['n_iterations']    
     
     for i in range(n_iterations):
         loss, grad_coefficients = Loss(train_para)
         # update the coefficients
         train_para['coefficients'] -= step_size * grad_coefficients
         '''Do we print the loss'''
-        print(round(loss, 6))
+        if i % 100 == 0:
+            print(round(loss, 6))
             
     return train_para
- 
 
-def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2):
+
+def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2):   
     
-    nrow, ncol = np.shape(train_para['design_matrix'])
+    nrow, _ = np.shape(train_para['coefficients'])
         
     '''Give the initial Hessian H. The dimension of H is 
     the same as the number of coefficients to be trained'''
-    H = np.eye(ncol)
+    H = np.eye(nrow)
 
     # BFGS algorithm
     loss, grad_coeff = Loss(train_para)
@@ -509,36 +521,67 @@ def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2):
         p = - H.dot(grad_coeff)        
         # There should be both old and new coefficients in the train_para
         train_para['coefficients_old'] = train_para['coefficients']
-        train_para['coefficients'] += p
+        train_para['coefficients'] = p + train_para['coefficients_old']
         
         new_loss, new_grad_coeff = Loss(train_para)
         
         # Ramijo Back-tracking
         while new_loss > loss + c * (grad_coeff.T).dot(p):
             p *= rho
-            train_para['coefficients'] = p + ['coefficients_old']            
+            train_para['coefficients'] = p + train_para['coefficients_old']            
             new_loss, new_grad_coeff = Loss(train_para)
         
         # update H
         s = p
         y = new_grad_coeff - grad_coeff
         r = (y.T).dot(s)
-        I = np.eye(ncol)
+        I = np.eye(nrow)
 #        I = np.eye(ncol+1)
         if r != 0:
             r = 1/r            
-            H = (I - r*s.dot(y.T)).dot(H).dot(I - r*y.dot(s.T)) + r*s.dot(s.T)# Can be accelerate
+            H = (I - r*s.dot(y.T)).dot(H).dot(I - r*y.dot(s.T)) + r*s.dot(s.T)# Can be accelerated
         else:
             H = I
         # Update loss, grad_square and paramter
         loss = new_loss
         grad_coeff = new_grad_coeff
-        grad_square = (new_grad_coeff.T).dot(new_grad_coeff)
+        grad_square = new_grad_coeff.T.dot(new_grad_coeff)
         
         # print some values to monitor the training process        
         print('loss  ', loss, '    ','grad_square   ', grad_square)
         
     return train_para, loss
+
+
+soft_observed =np.array( [[1, 0],
+       [0, 1],
+       [0, 1],
+       [1, 0],
+       [1, 0],
+       [1, 0],
+       [1, 0],
+       [1, 0]])
+soft_observed.reshape((-1, 1))
+
+train_para = {}
+train_para['design_matrix'] = train_center_dm
+train_para['observed'] = soft_observed
+train_para['reg'] = 1
+train_para['coefficients'] = np.random.randn(train_center_dm.shape[1]*train_para['observed'].shape[1], 1)*2
+train_para['loss_type'] = 'Softmax'
+
+initial = copy.deepcopy(train_para)
+
+train_para['step_size'] = 1e-4
+train_para['n_iterations'] = 10000
+train_para = Train_GD(train_para)
+train_para['coefficients']
+initial['coefficients']
+
+train_para = copy.deepcopy(initial)
+train_para, loss = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2)
+train_para['coefficients']
+initial['coefficients']
 '''#################################################################################'''
 '''
 **************THE FOLOWING BLOCK IS TO SELECT CENTER BY THE ABSOLUTE VALUES OF THE COEFFICIENTS
@@ -556,7 +599,7 @@ Input:
 '''
 def One_step_reduce_centers(train_para, testing_design_matrix):
 
-    nrow, ncol = train_para['coefficients'].shape
+    nrow, ncol = train_para['design_matrix'].shape
 #    ratio = 3000/len(centers)
     if ncol > 1500 :
         termination = 1.5*ncol
@@ -572,11 +615,15 @@ def One_step_reduce_centers(train_para, testing_design_matrix):
     m =1
     '''m is the number of centers to be removed at each round of training'''
     for i in range(m):    
-        coeff = train_para['coefficients']    
+        coeff = train_para['coefficients'] 
+        # if it is the case of softmax, we have to reshape the coeff
+        coeff = coeff.reshape((-1, ncol)).T
+        sabs_coeff = np.sum(np.abs(coeff), axis = 1, keepdims = True)
         # find the index of the coefficients with the smallest absolute value
-        ind_min = np.argmin(np.abs(coeff))
+        ind_min = np.argmin(np.abs(sabs_coeff))
         # remove the smallest
-        train_para['coefficients'] = np.delete(train_para['coefficients'], ind_min)
+        one_less_coeff = np.delete(coeff, ind_min, axis=0)
+        train_para['coefficients'] = one_less_coeff.T.reshape((-1,1))
         testing_design_matrix = np.delete(testing_design_matrix, ind_min, axis = 1)
         train_para['design_matrix'] = np.delete(train_para['design_matrix'], ind_min, axis = 1)
 
