@@ -425,6 +425,8 @@ def Loss_SumSquares(design_matrix, observed, coefficients, reg):
     return loss, grad_coefficients
 '''
 Integrate the above functions into one function for convenient usage.
+Input:
+    train_para: a dictionary, contains all the needed values to train a model.
 '''
 def Loss(train_para):
     design_matrix = train_para['design_matrix'] 
@@ -453,85 +455,74 @@ Outputs:
     coefficients: a matrix of shape (design_matrix.shape[0], observed.shape[1])
                     the values of the coefficients after n_iterations training      
 '''
-def Train_GD(gd_train_para):
+def Train_GD(train_para):
     # Take out the parameters
-    design_matrix = gd_train_para['design_matrix'] 
-    observed = gd_train_para['observed']
-    reg = gd_train_para['reg']
-    step_size = gd_train_para['step_size']
-    loss_type = gd_train_para['loss_type']
-    n_iterations = gd_train_para['n_iterations']
-    # initiate the coefficients
-    coefficients = np.random.randn(design_matrix.shape[0], observed.shape[1])
+#    design_matrix = train_para['design_matrix'] 
+#    observed = train_para['observed']
+#    reg = train_para['reg']
+    step_size = train_para['step_size']
+#    loss_type = gd_train_para['loss_type']
+    n_iterations = train_para['n_iterations']
+    train_para['coefficients'] = coefficients
     
-    if loss_type == 'Sigmoid':
-        for i in range(n_iterations):
-            loss, grad_coefficients = Loss_Sigmoid(design_matrix, observed, coefficients, reg)
-            # update the coefficients
-            coefficients -= step_size * grad_coefficients
-            '''Do we print the loss'''
-            print(round(loss, 6))
+    
+    for i in range(n_iterations):
+        loss, grad_coefficients = Loss(train_para)
+        # update the coefficients
+        train_para['coefficients'] -= step_size * grad_coefficients
+        '''Do we print the loss'''
+        print(round(loss, 6))
             
-    return coefficients
+    return train_para
  
 
-def Train_RBFN_BFGS(distance_matrix, observed_values, rho=0.8, c = 1e-3, termination = 1e-2,\
-                    parameter_inheritance = False, parameter=None, basis_function = 'Gaussian'):
+def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2):
     
-    nrow, ncol = np.shape(distance_matrix)[0]
+    nrow, ncol = np.shape(train_para['design_matrix'])
         
-    # Give the initial Hessian H. The variables are the coeff and reg
-    H = np.eye(ncol)/(10*nrow)
-#    H = np.eye(ncol+1)/(10*nrow)
-    # Check if it inherit the parameter from somewhere else.
-    if not parameter_inheritance :
-        # Set the starting point
-        parameter = {}
-#        parameter['coeff'] = np.ones((2*ncol+1,1))
-        parameter['coeff'] = np.ones((2*ncol+1,1))
-        #The reg should not be negative. It is better that reg > delta, a small positive number
-#        parameter['reg'] = reg
+    '''Give the initial Hessian H. The dimension of H is 
+    the same as the number of coefficients to be trained'''
+    H = np.eye(ncol)
 
     # BFGS algorithm
-    loss, gradient = Loss(distance_matrix, observed_values, parameter, basis_function)
-    grad_coeff = gradient['coeff']
+    loss, grad_coeff = Loss(train_para)
     ternination_square = termination**2
     grad_square = ternination_square + 1
 #    grad_square = (grad_coeff.T).dot(grad_coeff)
     while grad_square >= ternination_square:        
         p = - H.dot(grad_coeff)        
-        # Find the next coeff
-        parameter_new = {}
-        parameter_new['coeff'] = p + parameter['coeff']
-        parameter_new['reg'] = parameter['reg']
+        # There should be both old and new coefficients in the train_para
+        train_para['coefficients_old'] = train_para['coefficients']
+        train_para['coefficients'] += p
         
-        new_loss, new_gradient = Loss(distance_matrix, observed_values, parameter_new, basis_function)
+        new_loss, new_grad_coeff = Loss(train_para)
+        
         # Ramijo Back-tracking
         while new_loss > loss + c * (grad_coeff.T).dot(p):
             p *= rho
-            parameter_new['coeff'] = p + parameter['coeff']            
-            new_loss, new_gradient = Loss(distance_matrix, observed_values, parameter_new, basis_function)
+            train_para['coefficients'] = p + ['coefficients_old']            
+            new_loss, new_grad_coeff = Loss(train_para)
         
         # update H
         s = p
-        new_grad = new_gradient['coeff']
-        y = new_grad - grad_coeff
+        y = new_grad_coeff - grad_coeff
         r = (y.T).dot(s)
-        I = np.eye(2*ncol+1)
+        I = np.eye(ncol)
 #        I = np.eye(ncol+1)
         if r != 0:
             r = 1/r            
             H = (I - r*s.dot(y.T)).dot(H).dot(I - r*y.dot(s.T)) + r*s.dot(s.T)# Can be accelerate
         else:
             H = I
-        # Update loss, grad, grad_square and paramter
+        # Update loss, grad_square and paramter
         loss = new_loss
-        grad_coeff = new_grad
-        parameter['coeff'] = parameter_new['coeff']
-        grad_square = (grad_coeff.T).dot(grad_coeff)
+        grad_coeff = new_grad_coeff
+        grad_square = (new_grad_coeff.T).dot(new_grad_coeff)
+        
+        # print some values to monitor the training process        
         print('loss  ', loss, '    ','grad_square   ', grad_square)
         
-    return parameter, loss
+    return grad_coeff, loss
 '''#################################################################################'''
 def CS_Coeff():
     pass
