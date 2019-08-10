@@ -37,17 +37,6 @@ def Frequency_distinct(col):
         
     return freq_col
 
-#freq_df = df_att.apply(Frequency_distinct, axis = 0)
-#freq_array_log = np.log(freq_df)
-#freq_array_log.iloc[:5, :5]
-#head = freq_array_log.head()/ncol
-#
-#np.sum(freq_array_log.iloc[1]*freq_array_log.iloc[2])/ncol
-#
-#freq_df.head()
-#df_att.head()
-#np.sum(df_att['1.1'] == 8)
-#df_att.iloc[1].equals(df_att.iloc[3])
 '''
 Generate a small data set to test the following functions
 '''
@@ -67,6 +56,39 @@ def Small_sample(size = 10):
 
 small_sample = Small_sample(size=10)
 small_sample
+
+'''
+##########################################################################################3
+****************************************************************************************8
+         DEFINE THE RADIAL BASIS FUNCTIONS
+         
+RBF: the radial basis function
+'''
+def Thin_Plate_Spline(d):
+    d += 0.001 # make sure the returned values is not overflown
+    return d**2 * np.log(d)
+
+def Gaussian(distance, radius):
+    return np.exp(-distance**2/radius**2)
+    
+def Markov(distance, radius):
+    return np.exp(-distance/radius)  
+
+def Inverse_Multi_Quadric(distance,c, beta):
+    return (distance**2 + c**2)**(-beta) 
+
+def Design_matrix(distance_matrix, RBF = 'Gaussian'):
+    
+    if RBF == 'Gaussian':
+        design_matrix = Gaussian(distance_matrix, radius = 1)
+    elif RBF == 'Markov':
+        design_matrix = Markov(distance_matrix, radius = 1)
+    elif RBF == 'Thin_Plate_Spline':
+        design_matrix = Thin_Plate_Spline(distance_matrix)
+    elif RBF == 'Inverse_Multi_Quadric':
+        design_matrix = Inverse_Multi_Quadric(distance_matrix, c = 0.5, beta=1)
+        
+    return design_matrix
 
 '''
 #######################################################################################
@@ -182,6 +204,7 @@ class Distance_martix:
                 distance_matrix[i,j] = np.sum(unequal_indicator * unequal_series)
                 distance_matrix[j,i] = distance_matrix[i,j]
         self.eskin_matrix = distance_matrix / ncol
+
     # Define the distances
 attributes = ['att1', 'att2', 'att3']
 categories = ['label']
@@ -191,29 +214,17 @@ SS.hamming_matrix
 
 
 '''
-##########################################################################################3
-****************************************************************************************8
-         DEFINE THE RADIAL BASIS FUNCTIONS
-         
-RBF: the radial basis function
+###################################################################################
 '''
-def Thin_Plate_Spline(d):
-    d += 0.001 # make sure the returned values is not overflown
-    return d**2 * np.log(d)
-
-def Gaussian(distance, radius):
-    return np.exp(-distance**2/radius**2)
+def Split_dist_matrix(distance_matrix, design_matrix, train_ind, test_ind):
     
-def Markov(distance, radius):
-    return np.exp(-distance/radius)  
+    train_distance_matrix = distance_matrix[train_ind, train_ind]
+    test_distance_matrix = distance_matrix[test_ind, train_ind]
+    train_design_matrix = design_matrix[train_ind, train_ind]
+    test_design_matrix = design_matrix[test_ind, train_ind]
+    
+    return train_design_matrix, test_design_matrix, train_distance_matrix, test_distance_matrix
 
-def Inverse_Multi_Quadric(distance,c, beta):
-    return (distance**2 + c**2)**(-beta) 
-
-design_mat = Gaussian(SS.hamming_matrix, 1)
-design_mat[:5, :5]
-SS.hamming_matrix[:5, :5]
-np.exp(-0.3333333**2)
 '''#################################################################################
             CALCULATE THE DESIGN MATRIX FOR CENTERS SELECTED BY COVERAGE METHOD
 
@@ -261,24 +272,17 @@ Outputs:
     design_matrix: a submatrix of the distance matrix, with the rows corresponding to the
                     samples and the columns corresponding to the selected centers
 '''
-def Design_matrix_coverage_by_nCenters(distance_matrix, eliminated, nCenters, RBF = 'Gaussian'):
-    nrow, _ = distance_matrix.shape
-    to_be_del = eliminated[:nrow - nCenters]
-    sample_center_dist_mat = np.delete(distance_matrix, to_be_del, axis=1)
+def Design_matrix_coverage_by_nCenters(train_design_matrix, test_design_matrix, eliminated, nCenters):
     
-    if RBF == 'Gaussian':
-        design_matrix = Gaussian(sample_center_dist_mat, radius = 1)
-    elif RBF == 'Markov':
-        design_matrix = Markov(sample_center_dist_mat, radius = 1)
-    elif RBF == 'Thin_Plate_Spline':
-        design_matrix = Thin_Plate_Spline(sample_center_dist_mat)
-    elif RBF == 'Inverse_Multi_Quadric':
-        design_matrix = Inverse_Multi_Quadric(sample_center_dist_mat, c = 0.5, beta=1)
+    nrow, _ = train_design_matrix.shape
+    to_be_del = eliminated[:nrow - nCenters]
+    sub_train_dm = np.delete(train_design_matrix, to_be_del, axis=1)
+    sub_test_dm = np.delete(test_design_matrix, to_be_del, axis =1)
         
-    return design_matrix, sample_center_dist_mat
+    return sub_train_dm, sub_test_dm
 
 '''
-Design_matrix_coverage_by_radius: find centers with the size equal to nCenters
+Design_matrix_coverage_by_radius: find centers with the cut off distance cutoff
 
 Inputs:
         distance_matrix: as above
@@ -291,23 +295,19 @@ Outputs:
                     samples and the columns corresponding to the selected centers
 '''
 
-def Design_matrix_coverage_by_radius(distance_matrix, eliminated, radius, cutoff, RBF = 'Gaussian'):
-    nrow, _ = distance_matrix.shape
+def Design_matrix_coverage_by_radius(train_design_matrix, test_design_matrix, eliminated, radius, cutoff):
+    
+    nrow, _ = train_design_matrix.shape
     to_be_del = []
     for ind, v in enumerate(radius):
         if v <= cutoff:
             to_be_del.append(eliminated[ind])
-    sample_center_dist_mat = np.delete(distance_matrix, to_be_del, axis=1)
+            
+    sub_train_dm = np.delete(train_design_matrix, to_be_del, axis=1)
+    sub_test_dm = np.delete(test_design_matrix, to_be_del, axis =1)
     
-    if RBF == 'Gaussian':
-        design_matrix = Gaussian(sample_center_dist_mat, radius = 1)
-    elif RBF == 'Markov':
-        design_matrix = Markov(sample_center_dist_mat, radius = 1)
-    elif RBF == 'Thin_Plate_Spline':
-        design_matrix = Thin_Plate_Spline(sample_center_dist_mat)
-    elif RBF == 'Inverse_Multi_Quadric':
-        design_matrix = Inverse_Multi_Quadric(sample_center_dist_mat, c = 0.5, beta=1)
-    return design_matrix, sample_center_dist_mat
+    return sub_train_dm, sub_test_dm
+'''We should return the centers which will be used in testing'''
 
 eliminated, radius = CS_coverage_all(SS.hamming_matrix)
 design_matrix, _ = Design_matrix_coverage_by_nCenters(SS.hamming_matrix, eliminated, 3, RBF = 'Gaussian')
@@ -522,12 +522,59 @@ def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2):
         # print some values to monitor the training process        
         print('loss  ', loss, '    ','grad_square   ', grad_square)
         
-    return grad_coeff, loss
+    return train_para, loss
 '''#################################################################################'''
-def CS_Coeff():
-    pass
+'''
+**************THE FOLOWING BLOCK IS TO SELECT CENTER BY THE ABSOLUTE VALUES OF THE COEFFICIENTS
+*************The general idea is to generate a list of centers and the corresponding trained 
+************** coefficients, which can be applied to the testig set.
 
+One_step_reduce_centers: This function is to reduce the centers on basis of the coefficients after 
+                one round of training
+Input:
+    train_para: as above
+    testing_design_matrix:
+        a matrix with the rows the testing samples and the columns the centers. 
+       the testing design matrix and the design matrix in the train_para should have the columuns corresponding 
+       set of centers.
+'''
+def One_step_reduce_centers(train_para, testing_design_matrix):
 
+    nrow, ncol = train_para['coefficients'].shape
+#    ratio = 3000/len(centers)
+    if ncol > 1500 :
+        termination = 1.5*ncol
+    elif ncol<= 1500 and ncol >1000:
+        termination =  ncol
+    elif ncol<= 1000 and ncol>500: 
+        termination = 10
+    elif ncol <= 500:
+        termination = ncol/1000
+#    termination =10* len(centers)        
+    train_para, loss = Train_RBFN_BFGS(train_para, rho=0.85, c = 1e-3, termination=termination)   
+    
+    m =1
+    '''m is the number of centers to be removed at each round of training'''
+    for i in range(m):    
+        coeff = train_para['coefficients']    
+        # find the index of the coefficients with the smallest absolute value
+        ind_min = np.argmin(np.abs(coeff))
+        # remove the smallest
+        train_para['coefficients'] = np.delete(train_para['coefficients'], ind_min)
+        testing_design_matrix = np.delete(testing_design_matrix, ind_min, axis = 1)
+        train_para['design_matrix'] = np.delete(train_para['design_matrix'], ind_min, axis = 1)
+
+    return testing_design_matrix
+'''#######################################################################################'''
+'''
+*************Strategy:
+                      1, Calculate a big distance matrix, with all the training and testing samples
+******************** included. Then split this matrix into a square matrix with the rows and columns 
+********************  the training samples, and a matrix with all the rows testing samples and all the columns
+********************  the training samples.
+                      2, Calculate the design matrices for the above two distance matrices
+                      3, Select centers and sub select the corresponding designmatrics from step 2
+'''
 
 
 
