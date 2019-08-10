@@ -147,7 +147,7 @@ class Distance_martix:
                 distance_matrix[i,j] = np.sum(indicator * product)
                 distance_matrix[j,i] = distance_matrix[i,j]
                 self.of_matrix = np.float32(distance_matrix/ncol)
-
+    '''There should be at least 3 values for each attribute in order to use Lin_matrix'''
     def Lin_matrix(self):
         nrow, ncol = self.att.shape
         distance_matrix = np.zeros((nrow, nrow))
@@ -157,16 +157,22 @@ class Distance_martix:
         for i in range(nrow):
             for j in range(i, nrow):
                 A_matrix[i,j] = np.sum(frame_log_f_div_k.iloc[i]+frame_log_f_div_k.iloc[j])
-                A_matrix[j,i] = A_matrix[i,j]                
+                A_matrix[j,i] = A_matrix[i,j]  
+        self.A_matrix = A_matrix
 
-        for i in range(nrow):
-            for j in range(i, nrow):
+        for i in [1]:
+            for j in [1]:
                 equal_series = A_matrix[i,j]/(2*frame_log_f_div_k.iloc[i]) - 1
-                unequal_series = A_matrix[i,j]/(2*np.log((self.freq_frame.iloc[i]+self.freq_frame.iloc[j])/nrow,  dtype='f')) - 1
-                equal_indicator = self.att.iloc[i].eq(self.att.iloc[j])
-                unequal_indicator = 1 - equal_indicator
-                distance_matrix[i,j] = np.sum(equal_indicator*equal_series + unequal_indicator * unequal_series)
+                if self.att.iloc[i].equals(self.att.iloc[j]):
+                    distance_matrix[i,j] = np.sum(equal_series)
+                else:
+                    unequal_series = A_matrix[i,j]/(2*np.log((self.freq_frame.iloc[i]+self.freq_frame.iloc[j])/nrow,  dtype='f'))- 1
+                    equal_indicator = self.att.iloc[i].eq(self.att.iloc[j])
+                    unequal_indicator = 1 - equal_indicator   
+                    distance_matrix[i,j] = np.sum(equal_indicator*equal_series + unequal_indicator * unequal_series)
+
                 distance_matrix[j,i] = distance_matrix[i,j]
+                
         self.lin_matrix = np.float32(distance_matrix/ncol)
 
     def Burnaby_matrix(self):
@@ -175,6 +181,15 @@ class Distance_martix:
         distance_matrix = np.zeros((nrow, nrow))
         nrow_minus_freq = nrow - self.freq_frame
         relative_freq = self.freq_frame / nrow
+        denorminator_series = pd.DataFrame()
+        
+        for col in relative_freq.columns:
+            column = relative_freq[col]
+            s = 0
+            for val in set(self.att[col]):
+                s += 2 * np.log(1-column[self.att[col] == val].iloc[0])
+            denorminator_series[col] = [s]
+                
         for i in range(nrow):
             for j in range(i, nrow):
                 equal_indicator = (self.att.iloc[i] == self.att.iloc[j])
@@ -183,12 +198,10 @@ class Distance_martix:
                 nrow_minus_freq_product = nrow_minus_freq.iloc[i] * nrow_minus_freq.iloc[j]
                 numerator_series =np.log(freq_product / nrow_minus_freq_product, dtype = 'f')
                 
-                denorminator_series = 2 * np.sum(np.log(1-relative_freq, dtype = 'f'), axis = 0)
-                
                 unequal_series = numerator_series / denorminator_series
-                unequal_series /= nrow
+                unequal_series /= ncol
                 
-                distance_matrix[i,j] = np.sum(equal_indicator) + np.sum(unequal_indicator * unequal_series)
+                distance_matrix[i,j] = np.sum(equal_indicator + unequal_indicator * unequal_series, axis = 1)
                 distance_matrix[j,i] = distance_matrix[i,j]
                 
         self.burnaby_matrix = distance_matrix
@@ -196,7 +209,7 @@ class Distance_martix:
     def Eskin_matrix(self):
         nrow, ncol = self.att.shape
         ni_frame = self.att.apply(set, axis= 0).apply(lambda x:len(x))
-        unequal_series = 2/(ni_frame.ni_frame)
+        unequal_series = 2/(ni_frame*ni_frame)
         distance_matrix = np.zeros((nrow, nrow))
         for i in range(nrow):
             for j in range(i,nrow):
@@ -210,9 +223,12 @@ attributes = ['att1', 'att2', 'att3']
 categories = ['label']
 SS = Distance_martix(small_sample, attributes, categories)
 SS.Hamming_matrix()
-SS.hamming_matrix
-
-
+SS.IOF_matrix()
+SS.OF_matrix()
+SS.Burnaby_matrix()
+SS.burnaby_matrix
+SS.Eskin_matrix()
+SS.eskin_matrix
 '''
 ###################################################################################
 '''
