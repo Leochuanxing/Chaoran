@@ -5,38 +5,8 @@ import os
 import pandas as pd
 import numpy as np
 import copy
-
+import math
 '''################################################################################'''
-
-# Load the data of breast cancer and do the data wrangling
-def Wrangling_BC():
-    os.chdir('/home/leo/Documents/Project_SelectCenters/DATA/BreastCancer')
-    data = pd.read_csv('breast-cancer-wisconsin.data')
-
-    col_name = data.columns
-
-    complete = data[:][data[col_name[6]] != '?']
-    complete[col_name[6]] = complete[col_name[6]].astype(np.int64)
-    
-    attributes = col_name[1:10]
-    categories = col_name[-1]
-    
-    df_att = complete[attributes]
-    
-    return df_att, attributes, categories
-
-# independent test
-#col = df_att[attributes[0]]
-def Frequency_distinct(col):
-    distinct_values = list(set(col))
-    df_element = pd.DataFrame({'d_values':[], 'freq':[]})
-    for i in distinct_values:
-        df_element = df_element.append({'d_values':i, 'freq':sum(col == i)},\
-                                        ignore_index = True)
-    
-    freq_col = col.apply(lambda x:np.int(df_element[x==df_element['d_values']]['freq']))
-        
-    return freq_col
 
 '''
 Generate a small data set to test the following functions
@@ -54,8 +24,6 @@ def Small_sample(size = 10):
     # Combine them into a data frame
     sample_data = pd.DataFrame({'att1':att1_v, 'att2':att2_v, 'att3': att3_v, 'label':label_v})
     return sample_data
-
-
 
 '''
 ##########################################################################################3
@@ -94,6 +62,18 @@ def Design_matrix(distance_matrix, RBF = 'Gaussian'):
 
 '''
 #######################################################################################
+'''
+def Frequency_distinct(col):
+    distinct_values = list(set(col))
+    df_element = pd.DataFrame({'d_values':[], 'freq':[]})
+    for i in distinct_values:
+        df_element = df_element.append({'d_values':i, 'freq':sum(col == i)},\
+                                        ignore_index = True)
+    
+    freq_col = col.apply(lambda x:np.int(df_element[x==df_element['d_values']]['freq']))
+        
+    return freq_col
+'''
 Preparation is for data wrangling and calculate the distance matrix according to the
 selected distance
 *******************************************************************************
@@ -623,64 +603,7 @@ def Center_Select_Coef(train_para, testing_design_matrix, nCenters_list):
                       2, Calculate the design matrices for the above two distance matrices
                       3, Select centers and sub select the corresponding designmatrics from step 2
 '''
-small_sample = Small_sample(size=10)
-small_sample
 
-
-attributes = ['att1', 'att2', 'att3']
-categories = ['label']
-SS = Distance_martix(small_sample, attributes, categories)
-SS.Hamming_matrix()
-
-distance_matrix = SS.hamming_matrix
-design_matrix = Design_matrix(distance_matrix, RBF = 'Gaussian')
-train_design_matrix, test_design_matrix, train_distance_matrix, test_distance_matrix = \
-                Split_dist_matrix(distance_matrix, design_matrix, list(range(8)), [8,9])
-
-
-#train_center_dm_by_r, test_center_dm_by_r = Design_matrix_coverage_by_radius(train_design_matrix,test_design_matrix, eliminated,radius, cutoff = 0.7)
-
-observed = SS.cate[['label']]
-observed[observed['label'] == 'y1'] = 0
-observed[observed['label'] == 'y2'] = 1
-
-observed_train = observed.iloc[list(range(8))]
-observed_test = observed.iloc[[8,9]]
-
-
-soft_observed =np.array( [[1, 0],
-       [0, 1],
-       [0, 1],
-       [1, 0],
-       [1, 0],
-       [1, 0],
-       [1, 0],
-       [1, 0]])
-soft_observed
-
-eliminated, radius = CS_coverage_all(train_distance_matrix)
-train_center_dm, test_center_dm = Design_matrix_coverage_by_nCenters(train_design_matrix,test_design_matrix, eliminated, 8)
-
-train_para = {}
-train_para['design_matrix'] = train_center_dm
-train_para['observed'] = soft_observed
-train_para['reg'] = 1
-train_para['coefficients'] = np.random.randn(train_center_dm.shape[1]*train_para['observed'].shape[1], 1)*2
-train_para['loss_type'] = 'Softmax'
-
-
-
-test_center_dm = One_step_reduce_centers(train_para, test_center_dm)
-test_center_dm.shape
-train_para['design_matrix'].shape
-
-nCenters_list = [2,5]
-
-test_para = Center_Select_Coef(train_para, test_center_dm, nCenters_list)
-
-test_para['nCenters_list']
-test_para['design_matrix_list']
-test_para['coefficients_list']
 '''
 ##################################################################################################
 '''
@@ -742,11 +665,115 @@ def Test_MCC(test_para):
         if denominator == 0:
             denominator = 1
         # Calculate the MCC
+        print(numerator)
         mcc = numerator/denominator
         test_para['mcc_list'].append(mcc)
         
-    return test_para
+    return test_para, c_matrix
+'''##################################################################################'''  
+# Load the data of breast cancer and do the data wrangling
+def Wrangling_BC():
+    os.chdir('/home/leo/Documents/Project_SelectCenters/DATA/BreastCancer')
+    data = pd.read_csv('breast-cancer-wisconsin.data')
+
+    col_name = data.columns
+
+    complete = data[:][data[col_name[6]] != '?']
+    complete[col_name[6]] = complete[col_name[6]].astype(np.int64)
+    
+    attributes = list(col_name[1:10])
+    categories = [col_name[-1]]
+    
+    return complete, attributes, categories
+
+complete, attributes, categories = Wrangling_BC()
+complete.shape
+len(attributes)
+len(categories)
+
+SS = Distance_martix(complete, attributes, categories)
+SS.Hamming_matrix()
+
+distance_matrix = SS.hamming_matrix
+n_total = distance_matrix.shape[0]
+n_train = math.floor(3*n_total/4)
+
+
+design_matrix = Design_matrix(distance_matrix, RBF = 'Gaussian')
+train_design_matrix, test_design_matrix, train_distance_matrix, _ = \
+                Split_dist_matrix(distance_matrix, design_matrix, list(range(n_train)), list(range(n_train, n_total)))
+train_design_matrix.shape
+train_distance_matrix.shape
+test_design_matrix.shape
+#train_center_dm_by_r, test_center_dm_by_r = Design_matrix_coverage_by_radius(train_design_matrix,test_design_matrix, eliminated,radius, cutoff = 0.7)
+
+observed = SS.cate[['2.1']]
+observed[observed['2.1'] == 2] = 0
+observed[observed['2.1'] == 4] = 1
+observed
+
+observed_train = np.hstack((observed.iloc[list(range(n_train))].values, 1-observed.iloc[list(range(n_train))].values))
+observed_train.shape
+observed_test = np.hstack((observed.iloc[list(range(n_train, n_total))].values, 1- observed.iloc[list(range(n_train, n_total))].values))
+observed_test.shape
+
+
+train_para = {}
+train_para['design_matrix'] = train_design_matrix
+train_para['observed'] = observed_train
+train_para['reg'] = 0.1
+train_para['coefficients'] = np.random.randn(train_design_matrix.shape[1]*train_para['observed'].shape[1], 1)*2
+train_para['loss_type'] = 'Softmax'
+
+
+nCenters_list = [2,10,25,50, 100]
+
+test_para = Center_Select_Coef(train_para, test_design_matrix, nCenters_list)
+
+test_para['nCenters_list']
+test_para['design_matrix_list']
+test_para['coefficients_list']
+test_para['observed'] = observed_test
+
+test_para, c_matrix = Test_MCC(test_para)
+test_para['mcc_list']
+c_matrix
+train_para['design_matrix'].shape
+train_para['observed'].shape
+test_design_matrix.shape
+'''###########################################################################################'''
+def Coverage_RBFN(nCenters_list, train_distance_matrix, test_design_matrix, observed_train, observed_test):
+
+    test_para_coverage = {}
+    nCenters_list.sort(reverse=True)
+    test_para_coverage['nCenters_list'] = nCenters_list
+    test_para_coverage['observed'] = observed_test
+    test_para_coverage['design_matrix_list'] = []
+    test_para_coverage['coefficients_list'] = []
+    
+    train_para = {}
+    
+    train_para['observed'] = observed_train
+    train_para['reg'] = 0
+    train_para['loss_type'] = 'Softmax'
+    
+    eliminated, radius = CS_coverage_all(train_distance_matrix)
+    for nCenters in nCenters_list:
+        train_center_dm, test_center_dm = Design_matrix_coverage_by_nCenters\
+                                        (train_design_matrix,test_design_matrix, eliminated, nCenters)
+                                        
+        test_para_coverage['design_matrix_list'].append(copy.deepcopy(test_center_dm))
+        # Train the model
+        train_para['design_matrix'] = train_center_dm
+        train_para['coefficients'] = np.random.randn(train_center_dm.shape[1]*train_para['observed'].shape[1], 1)
+        train_para, _  = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-3)
         
+        test_para_coverage['coefficients_list'].append(copy.deepcopy(train_para['coefficients']))
+
+    test_para_coverage, c_matrix = Test_MCC(test_para_coverage)
+    
+    return test_para_coverage
+
 
 
 
