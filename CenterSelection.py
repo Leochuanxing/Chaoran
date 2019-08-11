@@ -55,8 +55,7 @@ def Small_sample(size = 10):
     sample_data = pd.DataFrame({'att1':att1_v, 'att2':att2_v, 'att3': att3_v, 'label':label_v})
     return sample_data
 
-small_sample = Small_sample(size=10)
-small_sample
+
 
 '''
 ##########################################################################################3
@@ -222,16 +221,7 @@ class Distance_martix:
         self.eskin_matrix = distance_matrix / ncol
 
     # Define the distances
-attributes = ['att1', 'att2', 'att3']
-categories = ['label']
-SS = Distance_martix(small_sample, attributes, categories)
-SS.Hamming_matrix()
-SS.IOF_matrix()
-SS.OF_matrix()
-SS.Burnaby_matrix()
-SS.burnaby_matrix
-SS.Eskin_matrix()
-SS.eskin_matrix
+
 '''
 ###################################################################################
 '''
@@ -243,10 +233,7 @@ def Split_dist_matrix(distance_matrix, design_matrix, train_ind, test_ind):
     test_design_matrix = design_matrix[test_ind, :][:, train_ind]
     
     return train_design_matrix, test_design_matrix, train_distance_matrix, test_distance_matrix
-distance_matrix = SS.hamming_matrix
-design_matrix = Design_matrix(distance_matrix, RBF = 'Gaussian')
-train_design_matrix, test_design_matrix, train_distance_matrix, test_distance_matrix = \
-                Split_dist_matrix(distance_matrix, design_matrix, list(range(8)), [8,9])
+
 '''****************************************************************************************
 ********************************************************************************************
 All the above functions have been verified by  22:00 Aug.10th'''
@@ -636,23 +623,31 @@ def Center_Select_Coef(train_para, testing_design_matrix, nCenters_list):
                       2, Calculate the design matrices for the above two distance matrices
                       3, Select centers and sub select the corresponding designmatrics from step 2
 '''
-eliminated, radius = CS_coverage_all(train_distance_matrix)
-train_center_dm, test_center_dm = Design_matrix_coverage_by_nCenters(train_design_matrix,test_design_matrix, eliminated, 8)
-train_center_dm.shape
-test_center_dm.shape
+small_sample = Small_sample(size=10)
+small_sample
+
+
+attributes = ['att1', 'att2', 'att3']
+categories = ['label']
+SS = Distance_martix(small_sample, attributes, categories)
+SS.Hamming_matrix()
+
+distance_matrix = SS.hamming_matrix
+design_matrix = Design_matrix(distance_matrix, RBF = 'Gaussian')
+train_design_matrix, test_design_matrix, train_distance_matrix, test_distance_matrix = \
+                Split_dist_matrix(distance_matrix, design_matrix, list(range(8)), [8,9])
+
+
 #train_center_dm_by_r, test_center_dm_by_r = Design_matrix_coverage_by_radius(train_design_matrix,test_design_matrix, eliminated,radius, cutoff = 0.7)
 
-
-SS.cate['label'][SS.cate['label'] == 'y1'] = 0
-SS.cate['label'][SS.cate['label'] == 'y2'] = 1
 observed = SS.cate[['label']]
+observed[observed['label'] == 'y1'] = 0
+observed[observed['label'] == 'y2'] = 1
+
 observed_train = observed.iloc[list(range(8))]
 observed_test = observed.iloc[[8,9]]
-observed_test
-observed_train.shape
-type(observed)
-observed
-observed_train
+
+
 soft_observed =np.array( [[1, 0],
        [0, 1],
        [0, 1],
@@ -663,25 +658,16 @@ soft_observed =np.array( [[1, 0],
        [1, 0]])
 soft_observed
 
+eliminated, radius = CS_coverage_all(train_distance_matrix)
+train_center_dm, test_center_dm = Design_matrix_coverage_by_nCenters(train_design_matrix,test_design_matrix, eliminated, 8)
+
 train_para = {}
 train_para['design_matrix'] = train_center_dm
-train_para['observed'] = observed_train
+train_para['observed'] = soft_observed
 train_para['reg'] = 1
 train_para['coefficients'] = np.random.randn(train_center_dm.shape[1]*train_para['observed'].shape[1], 1)*2
-train_para['loss_type'] = 'Sigmoid'
+train_para['loss_type'] = 'Softmax'
 
-initial = copy.deepcopy(train_para)
-
-train_para['step_size'] = 1e-4
-train_para['n_iterations'] = 10000
-train_para = Train_GD(train_para)
-train_para['coefficients']
-initial['coefficients']
-
-train_para = copy.deepcopy(initial)
-train_para, loss = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2)
-train_para['coefficients']
-initial['coefficients']
 
 
 test_center_dm = One_step_reduce_centers(train_para, test_center_dm)
@@ -697,7 +683,6 @@ test_para['design_matrix_list']
 test_para['coefficients_list']
 
 
-train_center_dm
 
 
 
