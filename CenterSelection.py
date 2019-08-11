@@ -681,20 +681,72 @@ test_para = Center_Select_Coef(train_para, test_center_dm, nCenters_list)
 test_para['nCenters_list']
 test_para['design_matrix_list']
 test_para['coefficients_list']
+'''
+##################################################################################################
+'''
+'''
+Denominator_factor: this is a small subfuntion of Test_MCC.
+'''
+def Denominator_factor(c_matrix):
+    denominator_factor = 0
+    nclass, _ = c_matrix.shape
+    c_rowsum = np.sum(c_matrix, axis = 1, keepdims=True)
+    for k in range(nclass):
+        for kp in range(nclass):
+            if kp != k:
+                for lp in range(nclass):
+                    denominator_factor += c_rowsum[k]*c_matrix[kp,lp]
+    return denominator_factor
 
+'''
+Test_MCC:This function is to calculate the MCC. The binary classification should be considered as a 
+        special case of the multiclass classification problem, with the number of class be 2.
+'''
+def Test_MCC(test_para):
+    observed = test_para['observed']
+    n_class = observed.shape[1]
+    design_matrix_list = test_para['design_matrix_list']
+    coefficients_list = test_para['coefficients_list']
+    nCenters_list = test_para['nCenters_list']
+    
+    test_para['mcc_list'] = [] 
 
-
-
-
-
-
-
-
-
-
-
-
-
+    for ind, nCenters in enumerate(nCenters_list):
+        coefficients = coefficients_list[ind]
+        design_matrix = design_matrix_list[ind]
+        # Set the shape of coefficients
+        coefficients = coefficients.reshape((-1, nCenters)).T
+        pred_logit = design_matrix.dot(coefficients)
+        max_logit = np.max(pred_logit, axis = 1, keepdims=True)
+        pred_bool = pred_logit==max_logit
+        # Calculate the C matrix
+        c_matrix = np.zeros((n_class, n_class))
+        for i in range(n_class):
+            for j in range(n_class):
+                pred_i = observed[pred_bool[:, i] == True, :]
+                # pred_i is a subset of observed with the predicted class i
+                observe_j = pred_i[pred_i[:, j] == 1, :]
+                #observe_j is the set of samples with predicted class i and observed class j
+                c_matrix[i,j] = observe_j.shape[0]
+                
+        # Calculate the MCC
+        numerator = 0
+        for ka in range(n_class):
+            for la in range(n_class):
+                for ma in range(n_class):
+                    numerator += c_matrix[ka, ka]*c_matrix[la, ma] - c_matrix[ka, la]*c_matrix[ma, ka]
+                    
+        df1 = Denominator_factor(c_matrix)
+        df2 = Denominator_factor(c_matrix.T)
+        denominator = df1**(0.5)*df2**(0.5)
+        if denominator == 0:
+            denominator = 1
+        # Calculate the MCC
+        mcc = numerator/denominator
+        test_para['mcc_list'].append(mcc)
+        
+    return test_para
+        
 
 
 
