@@ -123,7 +123,7 @@ class Distance_martix:
     def IOF_matrix(self):
         nrow, ncol = self.att.shape
         freq_frame = self.att.apply(Frequency_distinct, axis = 0)
-        freq_frame_log = np.log(freq_frame, dtype = 'f')
+        freq_frame_log = np.log(freq_frame, dtype = np.float32)
         self.freq_frame = freq_frame
         self.freq_frame_log = freq_frame_log
         
@@ -139,7 +139,7 @@ class Distance_martix:
 
     def OF_matrix(self):
         nrow, ncol = self.att.shape
-        logk = np.log(nrow, dtype='f')
+        logk = np.log(nrow, dtype=np.float32)
         distance_matrix = np.zeros((nrow, nrow))
         frame_log_f_div_k = self.freq_frame_log - logk
         self.frame_log_f_div_k  = frame_log_f_div_k 
@@ -169,7 +169,7 @@ class Distance_martix:
                 if self.att.iloc[i].equals(self.att.iloc[j]):
                     distance_matrix[i,j] = np.sum(equal_series)
                 else:
-                    unequal_series = A_matrix[i,j]/(2*np.log((self.freq_frame.iloc[i]+self.freq_frame.iloc[j])/nrow,  dtype='f'))- 1
+                    unequal_series = A_matrix[i,j]/(2*np.log((self.freq_frame.iloc[i]+self.freq_frame.iloc[j])/nrow,  dtype=np.float32))- 1
                     equal_indicator = self.att.iloc[i].eq(self.att.iloc[j])
                     unequal_indicator = 1 - equal_indicator   
                     distance_matrix[i,j] = np.sum(equal_indicator*equal_series + unequal_indicator * unequal_series)
@@ -199,7 +199,7 @@ class Distance_martix:
                 unequal_indicator =  1 - equal_indicator
                 freq_product = self.freq_frame.iloc[i] * self.freq_frame.iloc[j]
                 nrow_minus_freq_product = nrow_minus_freq.iloc[i] * nrow_minus_freq.iloc[j]
-                numerator_series =np.log(freq_product / nrow_minus_freq_product, dtype = 'f')
+                numerator_series =np.log(freq_product / nrow_minus_freq_product, dtype = np.float32)
                 
                 unequal_series = numerator_series / denorminator_series
                 unequal_series /= ncol
@@ -334,19 +334,7 @@ def Design_matrix_coverage_by_radius(train_design_matrix, test_design_matrix, el
     return sub_train_dm, sub_test_dm
 '''We should return the centers which will be used in testing'''
 
-eliminated, radius = CS_coverage_all(train_distance_matrix)
-train_center_dm, test_center_dm = Design_matrix_coverage_by_nCenters(train_design_matrix,test_design_matrix, eliminated, 3)
-train_center_dm.shape
-test_center_dm.shape
-train_center_dm_by_r, test_center_dm_by_r = Design_matrix_coverage_by_radius(train_design_matrix,test_design_matrix, eliminated,radius, cutoff = 0.7)
 
-SS.cate.loc[SS.cate.label == 'y1'] = 0
-SS.cate.loc[SS.cate.label == 'y2'] = 1
-observed = SS.cate
-observed_train = observed.iloc[list(range(8))]
-observed_test = observed.iloc[[8,9]]
-observed_test
-observed_train
 '''#################################################################################
 ****************************************************************************************
                 CALCULATE THE LOSS AND THE GRADIENTS
@@ -553,35 +541,6 @@ def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2):
     return train_para, loss
 
 
-soft_observed =np.array( [[1, 0],
-       [0, 1],
-       [0, 1],
-       [1, 0],
-       [1, 0],
-       [1, 0],
-       [1, 0],
-       [1, 0]])
-soft_observed.reshape((-1, 1))
-
-train_para = {}
-train_para['design_matrix'] = train_center_dm
-train_para['observed'] = soft_observed
-train_para['reg'] = 1
-train_para['coefficients'] = np.random.randn(train_center_dm.shape[1]*train_para['observed'].shape[1], 1)*2
-train_para['loss_type'] = 'Softmax'
-
-initial = copy.deepcopy(train_para)
-
-train_para['step_size'] = 1e-4
-train_para['n_iterations'] = 10000
-train_para = Train_GD(train_para)
-train_para['coefficients']
-initial['coefficients']
-
-train_para = copy.deepcopy(initial)
-train_para, loss = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2)
-train_para['coefficients']
-initial['coefficients']
 '''#################################################################################'''
 '''
 **************THE FOLOWING BLOCK IS TO SELECT CENTER BY THE ABSOLUTE VALUES OF THE COEFFICIENTS
@@ -600,34 +559,73 @@ Input:
 def One_step_reduce_centers(train_para, testing_design_matrix):
 
     nrow, ncol = train_para['design_matrix'].shape
-#    ratio = 3000/len(centers)
-    if ncol > 1500 :
-        termination = 1.5*ncol
-    elif ncol<= 1500 and ncol >1000:
-        termination =  ncol
-    elif ncol<= 1000 and ncol>500: 
-        termination = 10
-    elif ncol <= 500:
-        termination = ncol/1000
-#    termination =10* len(centers)        
-    train_para, loss = Train_RBFN_BFGS(train_para, rho=0.85, c = 1e-3, termination=termination)   
     
-    m =1
-    '''m is the number of centers to be removed at each round of training'''
-    for i in range(m):    
-        coeff = train_para['coefficients'] 
-        # if it is the case of softmax, we have to reshape the coeff
-        coeff = coeff.reshape((-1, ncol)).T
-        sabs_coeff = np.sum(np.abs(coeff), axis = 1, keepdims = True)
-        # find the index of the coefficients with the smallest absolute value
-        ind_min = np.argmin(np.abs(sabs_coeff))
-        # remove the smallest
-        one_less_coeff = np.delete(coeff, ind_min, axis=0)
-        train_para['coefficients'] = one_less_coeff.T.reshape((-1,1))
-        testing_design_matrix = np.delete(testing_design_matrix, ind_min, axis = 1)
-        train_para['design_matrix'] = np.delete(train_para['design_matrix'], ind_min, axis = 1)
+    if ncol != testing_design_matrix.shape[1]:
+        raise Exception('The centers don\'t match')
+    
+    else:
+    #    ratio = 3000/len(centers)
+        if ncol > 1500 :
+            termination = 1.5*ncol
+        elif ncol<= 1500 and ncol >1000:
+            termination =  ncol
+        elif ncol<= 1000 and ncol>500: 
+            termination = 10
+        elif ncol <= 500:
+            termination = ncol/1000
+    #    termination =10* len(centers)        
+        train_para, loss = Train_RBFN_BFGS(train_para, rho=0.85, c = 1e-3, termination=termination)   
+        
+        m =1
+        '''m is the number of centers to be removed at each round of training'''
+        for i in range(m):    
+            coeff = train_para['coefficients'] 
+            # if it is the case of softmax, we have to reshape the coeff
+            coeff = coeff.reshape((-1, ncol)).T
+            sabs_coeff = np.sum(np.abs(coeff), axis = 1, keepdims = True)
+            # find the index of the coefficients with the smallest absolute value
+            ind_min = np.argmin(np.abs(sabs_coeff))
+            # remove the smallest
+            one_less_coeff = np.delete(coeff, ind_min, axis=0)
+            train_para['coefficients'] = one_less_coeff.T.reshape((-1,1))
+            testing_design_matrix = np.delete(testing_design_matrix, ind_min, axis = 1)
+            train_para['design_matrix'] = np.delete(train_para['design_matrix'], ind_min, axis = 1)
 
     return testing_design_matrix
+
+'''
+Center_Select_Coef: select center according to the absolute values of the coefficients
+Inputs:
+    train_para: as above
+    testing_design_matrix: as above
+    nCenters_list: a list giving the number of centers to be kept
+Outputs:
+    test_para:
+        nCenters_list: as above
+        design_matrix_list: a list of testing design matrices, of which the columns
+                            of each matrix are correponding to the numbers of the centers
+                            given in the nCenters_list.
+        coefficients_list: a list of coefficients corresponding to the design_matrix_list
+        loss_type: as above
+'''
+
+def Center_Select_Coef(train_para, testing_design_matrix, nCenters_list):
+    nCenters_list.sort(reverse=True)
+    test_para = {}
+    test_para['nCenters_list'] = nCenters_list
+    test_para['design_matrix_list'] = []
+    test_para['coefficients_list'] = []
+    test_para['loss_type'] = train_para['loss_type']
+    
+    for nCenters in nCenters_list:
+        while testing_design_matrix.shape[1] > nCenters:
+            testing_design_matrix = One_step_reduce_centers(train_para, testing_design_matrix)
+            print('\n Number of centers:   ', testing_design_matrix.shape[1], '\n')
+            
+        test_para['design_matrix_list'].append(copy.deepcopy(testing_design_matrix))
+        test_para['coefficients_list'].append(copy.deepcopy(train_para['coefficients']))
+        
+    return test_para
 '''#######################################################################################'''
 '''
 *************Strategy:
@@ -638,6 +636,84 @@ def One_step_reduce_centers(train_para, testing_design_matrix):
                       2, Calculate the design matrices for the above two distance matrices
                       3, Select centers and sub select the corresponding designmatrics from step 2
 '''
+eliminated, radius = CS_coverage_all(train_distance_matrix)
+train_center_dm, test_center_dm = Design_matrix_coverage_by_nCenters(train_design_matrix,test_design_matrix, eliminated, 8)
+train_center_dm.shape
+test_center_dm.shape
+#train_center_dm_by_r, test_center_dm_by_r = Design_matrix_coverage_by_radius(train_design_matrix,test_design_matrix, eliminated,radius, cutoff = 0.7)
+
+
+SS.cate['label'][SS.cate['label'] == 'y1'] = 0
+SS.cate['label'][SS.cate['label'] == 'y2'] = 1
+observed = SS.cate[['label']]
+observed_train = observed.iloc[list(range(8))]
+observed_test = observed.iloc[[8,9]]
+observed_test
+observed_train.shape
+type(observed)
+observed
+observed_train
+soft_observed =np.array( [[1, 0],
+       [0, 1],
+       [0, 1],
+       [1, 0],
+       [1, 0],
+       [1, 0],
+       [1, 0],
+       [1, 0]])
+soft_observed
+
+train_para = {}
+train_para['design_matrix'] = train_center_dm
+train_para['observed'] = observed_train
+train_para['reg'] = 1
+train_para['coefficients'] = np.random.randn(train_center_dm.shape[1]*train_para['observed'].shape[1], 1)*2
+train_para['loss_type'] = 'Sigmoid'
+
+initial = copy.deepcopy(train_para)
+
+train_para['step_size'] = 1e-4
+train_para['n_iterations'] = 10000
+train_para = Train_GD(train_para)
+train_para['coefficients']
+initial['coefficients']
+
+train_para = copy.deepcopy(initial)
+train_para, loss = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-2)
+train_para['coefficients']
+initial['coefficients']
+
+
+test_center_dm = One_step_reduce_centers(train_para, test_center_dm)
+test_center_dm.shape
+train_para['design_matrix'].shape
+
+nCenters_list = [2,5]
+
+test_para = Center_Select_Coef(train_para, test_center_dm, nCenters_list)
+
+test_para['nCenters_list']
+test_para['design_matrix_list']
+test_para['coefficients_list']
+
+
+train_center_dm
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
