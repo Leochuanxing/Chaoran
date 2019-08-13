@@ -509,9 +509,10 @@ def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-4, termination = 1e-2):
             print('loss  ', loss, '    ','grad_square   ', grad_square)
         
         #Check if the training process is efficient!
-        if n_iteration == 1000:
+        if n_iteration == 100:
             if np.log(grad_square_old) - np.log(grad_square) < 1:
                 print('Inefficient training \n')
+                break
             else:
                 n_iteration = 0
         
@@ -984,10 +985,18 @@ for dist_type in dist_type_list:
         nCenters_list.extend([10, 8, 6, 4, 2])
           
         reg_list = [0.01, 0.05, 0.1, 0.5, 1]
-
-        mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
-
-        BRE_results[dist_type+'_'+RBF] = copy.deepcopy((mcc_coeff_list, mcc_coverage_list))
+        
+        nIter = 5
+        mcc_coeff_matrix = np.zeros((len(nCenters_list), nIter))
+        mcc_coverage_matrix = np.zeros((len(nCenters_list), nIter))
+        for i in range(nIter):
+            mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
+            mcc_coeff_matrix[:, i] = copy.deepcopy(mcc_coeff_list)
+            mcc_coverage_matrix[:,i] = copy.deepcopy(mcc_coverage_list)
+            # Monitor the process
+            key = dist_type+'_'+RBF
+            print(key)
+        BRE_results[dist_type+'_'+RBF] = copy.deepcopy((mcc_coeff_matrix, mcc_coverage_matrix))
         
 dist_type_list = ['Hamming', 'IOF', 'OF']
 RBF_list = ['Inverse_Multi_Quadric', 'Thin_Plate_Spline']
@@ -1021,15 +1030,28 @@ for dist_type in dist_type_list:
         nCenters_list.extend([10, 8, 6, 4, 2])
           
         reg_list = [0.01, 0.05, 0.1, 0.5, 1]
+        
+        nIter = 5
+        mcc_coeff_matrix = np.zeros((len(nCenters_list), nIter))
+        mcc_coverage_matrix = np.zeros((len(nCenters_list), nIter))
+        for i in range(nIter):
+            mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
+            mcc_coeff_matrix[:, i] = copy.deepcopy(mcc_coeff_list)
+            mcc_coverage_matrix[:,i] = copy.deepcopy(mcc_coverage_list)
+            # Monitor the process
+            key = dist_type+'_'+RBF
+            print(key)
+        BRE_results[dist_type+'_'+RBF] = copy.deepcopy((mcc_coeff_matrix, mcc_coverage_matrix))
 
-        mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
+'''**********************************************************************************'''
+'''                  DO NOT FORGET TO SAVE THE RESULTS                '''
+    
+os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results')
+results_frame = pd.DataFrame(BRE_results)
+results_frame.to_pickle('BRE_results_frame.pks')
 
-        BRE_results[dist_type+'_'+RBF] = copy.deepcopy((mcc_coeff_list, mcc_coverage_list))
-
-
-
-
-
+df = pd.read_pickle('BRE_results_frame.pks')
+df.columns
 
 
 
