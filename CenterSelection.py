@@ -382,8 +382,42 @@ def Loss_Softmax(design_matrix, labels, coefficients, reg):
     
     return loss, grad_coefficients
 
-def Loss_SVM():
-    pass
+'''
+'''
+
+def Loss_SVM(design_matrix, observed, coefficients, reg):
+     
+    nrow, ncol = design_matrix.shape
+    # Reshape the coefficients
+    coefficients = coefficients.reshape((-1, ncol)).T
+    # Calculate the loss
+    ii = np.zeros((observed.shape[1], observed.shape[1])) + 1
+    Wx = design_matrix.dot(coefficients)
+    s1 = Wx + 1
+    obs = observed * Wx
+    obsii = obs.dot(ii)
+    ad = s1 - obsii
+    d = ad * (1-observed)
+    ind = (d>0)
+    sd = d * ind
+    loss = np.sum(sd)
+    loss += reg * np.sum(coefficients * coefficients)
+    
+    # Calculate the gradients
+    grad_d = ind
+    grad_ad = grad_d * (1-observed)
+    grad_s1 = grad_ad
+    grad_obsii = - grad_ad
+    grad_Wx = grad_s1
+    grad_obs = grad_obsii.dot(ii)
+    grad_Wx += observed * grad_obs
+    grad_coeff = (design_matrix.T).dot(grad_Wx)
+    
+    grad_coeff += 2 * reg * coefficients
+    # Reshape the gradient
+    grad_coeff = grad_coeff.T.reshape((-1, 1))
+    return loss, grad_coeff
+
 
 '''
 Loss_SumSquares: the loss is measured by the sum of the sequares of the difference 
@@ -428,6 +462,8 @@ def Loss(train_para):
         loss, grad_coefficients = Loss_Softmax(design_matrix, observed, coefficients, reg)
     elif loss_type == 'SumSquares':
         loss, grad_coefficients = Loss_SumSquares(design_matrix, observed, coefficients, reg)
+    elif loss_type == 'SVM':
+        loss, grad_coefficients = Loss_SVM(design_matrix, observed, coefficients, reg)
     return loss, grad_coefficients
 
 
@@ -467,28 +503,22 @@ def Train_GD(train_para):
 
 def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-4, termination = 1e-2):   
     
-    nrow, _ = np.shape(train_para['coefficients'])
-        
-    '''Give the initial Hessian H. The dimension of H is 
-    the same as the number of coefficients to be trained'''
-    H = np.eye(nrow)
+    nrow, _ = np.shape(train_para['coefficients']) 
+    max_design = np.max(np.abs(train_para['design_matrix']))       
     # Create an iteration counter
     n_iteration = 0
     # BFGS algorithm
     loss, grad_coeff = Loss(train_para)
+    # Initiate H. This H should not be large in case it may destroy the Loss function
+    H = np.eye(nrow)
+    H *= 1/(np.max(np.abs(grad_coeff)) * max_design)
     ternination_square = termination**2
     grad_square = ternination_square + 1
-
     while grad_square >= ternination_square:          
         # keep a record of this grad_square for monitoring the efficiency of this process
-#        if n_iteration == 0:
-#            grad_square_old = grad_square
         n_iteration += 1
       
-        p = - H.dot(grad_coeff) * 1e-4
-        # Make sure the first step is not too big that the fist Loss function is out of control
-        # there for we time it by 1e-3. This value can be adjusted
-        
+        p = - H.dot(grad_coeff)        
         # There should be both old and new coefficients in the train_para
         train_para['coefficients_old'] = train_para['coefficients']
         train_para['coefficients'] = p + train_para['coefficients_old']
@@ -508,8 +538,8 @@ def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-4, termination = 1e-2):
             r = 1/r            
             H = (I - r*s.dot(y.T)).dot(H).dot(I - r*y.dot(s.T)) + r*s.dot(s.T)# Can be accelerated
         else:
-#            H = I 
             H = np.diag(np.random.uniform(0.5, 1, nrow))# try to eliminate the periodic dead loop
+            H *= 1/(np.max(np.abs(new_grad_coeff))*max_design)# Make sure H is not too large
         # Update loss, grad_square and paramter
         loss = new_loss
         grad_coeff = new_grad_coeff
@@ -517,8 +547,7 @@ def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-4, termination = 1e-2):
         # print some values to monitor the training process 
         if n_iteration % 100 == 0:
             print('loss  ', loss, '    ','grad_square   ', grad_square)
-            n_iteration = 0
-        
+            n_iteration = 0        
         
     return train_para, loss
 
@@ -562,16 +591,17 @@ def One_step_reduce_centers(train_para, testing_design_matrix, nCenters):
             train_para['design_matrix'] = np.delete(train_para['design_matrix'], ind_min, axis = 1)
             
     #    ratio = 3000/len(centers)
-        if ncol > 1500 :
-            termination = 1.5*ncol
-        elif ncol<= 1500 and ncol >1000:
-            termination =  ncol
-        elif ncol<= 1000 and ncol>500: 
-            termination = 10
-        elif ncol <= 500:
-            termination = ncol/1000            
-        elif testing_design_matrix.shape[1] == nCenters:
-            termination = 1e-3  
+#        if ncol > 1500 :
+#            termination = 1.5*ncol
+#        elif ncol<= 1500 and ncol >1000:
+#            termination =  ncol
+#        elif ncol<= 1000 and ncol>500: 
+#            termination = 10
+#        elif ncol <= 500:
+#            termination = ncol/1000            
+#        elif testing_design_matrix.shape[1] == nCenters:
+#            termination = 1e-3  
+        termination = 1e-3
         '''Here, we want the coefficient is well trained at the number of centers we need'''
     #    termination =10* len(centers)  
         if method == 'BFGS':      
@@ -847,7 +877,7 @@ def Split_data(distance_matrix, design_matrix, observed_total, hamming_dist_m):
     validation_design_matrix = design_matrix[validation_ind,:][:, train_ind]
     test_design_matrix = design_matrix[test_ind, :][:, train_ind]    
     
-    
+    # Remove the duplicates
     train_hamming_dist_m = hamming_dist_m[train_ind, :][:, train_ind]    
     eliminated, radius = CS_coverage_all(train_hamming_dist_m)  
     to_be_del = []
@@ -937,74 +967,25 @@ def Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
 '''************************PROCESSING THE DATA******************************'''
 
 
+'Softmax'
+#
+complete, attributes, categories = Wrangling_BC()
+SS = Distance_martix(complete, attributes, categories)
+SS.Hamming_matrix()
+SS.IOF_matrix()
+SS.OF_matrix()
+#SS.Burnaby_matrix()
+SS.Eskin_matrix()# If the distance were not of great contrast. We multiply by a constant
+#SS.Lin_matrix()
+#
+observed = SS.cate[['2.1']]
+observed[observed['2.1'] == 2] = 0
+observed[observed['2.1'] == 4] = 1
+observed_total = np.float64(np.hstack((observed.values, 1 - observed.values)))
 
-
-#complete, attributes, categories = Wrangling_BC()
-#SS = Distance_martix(complete, attributes, categories)
-#SS.Hamming_matrix()
-#SS.IOF_matrix()
-#SS.OF_matrix()
-##SS.Burnaby_matrix()
-##SS.Eskin_matrix()# If the distance were not of great contrast. We multiply by a constant
-##SS.Lin_matrix()
-#
-#observed = SS.cate[['2.1']]
-#observed[observed['2.1'] == 2] = 0
-#observed[observed['2.1'] == 4] = 1
-#observed_total = np.hstack((observed.values, 1 - observed.values))
-#
-#dist_type_list = ['Hamming', 'IOF', 'OF']
-#RBF_list = ['Gaussian', 'Markov']
-#BRE_results = {}
-#for dist_type in dist_type_list:
-#    for RBF in RBF_list:
-#        if dist_type == 'Hamming':
-#            distance_matrix = SS.hamming_matrix
-#        elif dist_type == 'IOF':
-#            distance_matrix = SS.iof_matrix
-#        elif dist_type == 'OF':
-#            distance_matrix =SS.of_matrix
-#            
-#        mean = np.average(np.abs(distance_matrix))
-#        if mean < 1:
-#            amplified_dist_matrix = distance_matrix / mean
-#        else:
-#            amplified_dist_matrix = distance_matrix
-#    
-#        design_matrix = Design_matrix(amplified_dist_matrix, RBF)
-#        
-#
-#        data_dict = Split_data(distance_matrix, design_matrix, observed_total, SS.hamming_matrix) 
-#
-#        # Generate the nCenters_list
-#        nCenters_list = []
-#        nCenters_total = data_dict['train_distance_matrix'].shape[1]
-#        nCenters = math.floor(nCenters_total/2)
-#        while not (nCenters > 15 and nCenters < 31):
-#            nCenters = math.floor(nCenters/2)
-#            nCenters_list.append(nCenters)
-#        nCenters_list.extend([10, 8, 6, 4, 2])
-#          
-#        reg_list = [0.01, 0.05, 0.1, 0.5, 1]
-#        
-#        nIter = 5
-#        mcc_coeff_matrix = np.zeros((len(nCenters_list), nIter))
-#        mcc_coverage_matrix = np.zeros((len(nCenters_list), nIter))
-#        for i in range(nIter):
-#            mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
-#            mcc_coeff_matrix[:, i] = copy.deepcopy(mcc_coeff_list)
-#            mcc_coverage_matrix[:,i] = copy.deepcopy(mcc_coverage_list)
-#            # Monitor the process
-#            key = dist_type+'_'+RBF
-#            print(key)
-#        BRE_results[dist_type+'_'+RBF] = copy.deepcopy((mcc_coeff_matrix, mcc_coverage_matrix))
-#BRE_results['nCenters_list'] = nCenters_list
-#
-#design_matrix[:5, :5] 
-#np.sum(np.isnan(design_matrix))
-#    #################################################################################################   
-dist_type_list = ['IOF']
-RBF_list = ['Thin_Plate_Spline']
+dist_type_list = ['Hamming', 'IOF', 'OF', 'Eskin']
+RBF_list = ['Gaussian', 'Markov', 'Thin_Plate_Spline', 'Inverse_Multi_Quadric']
+BRE_results = {}
 for dist_type in dist_type_list:
     for RBF in RBF_list:
         if dist_type == 'Hamming':
@@ -1013,201 +994,44 @@ for dist_type in dist_type_list:
             distance_matrix = SS.iof_matrix
         elif dist_type == 'OF':
             distance_matrix =SS.of_matrix
-            
-        mean = np.average(np.abs(distance_matrix))
-        if mean < 1:
-            amplified_dist_matrix = distance_matrix / mean
-        else:
-            amplified_dist_matrix = distance_matrix
-    
-        design_matrix = Design_matrix(amplified_dist_matrix, RBF)
-        
-        
-
+        elif dist_type == 'Eskin':
+            distance_matrix = SS.eskin_matrix
+        # Amplify the distance            
+        train_size = math.floor(distance_matrix.shape[0])
+        mean = np.average(np.abs(distance_matrix[:train_size,:train_size]))
+        amplified_dist_matrix = distance_matrix / mean
+        # Calculate the design matrix
+        design_matrix = Design_matrix(amplified_dist_matrix, RBF)         
+        # Load the data_dict
         data_dict = Split_data(distance_matrix, design_matrix, observed_total, SS.hamming_matrix) 
-
+#
         # Generate the nCenters_list
         nCenters_list = []
         nCenters_total = data_dict['train_distance_matrix'].shape[1]
         nCenters = math.floor(nCenters_total/2)
-        while not (nCenters > 15 and nCenters < 31):
+        while nCenters > 2:
             nCenters = math.floor(nCenters/2)
             nCenters_list.append(nCenters)
-        nCenters_list.extend([10, 8, 6, 4, 2])
-          
-        reg_list = [0.01, 0.05, 0.1, 0.5, 1]
         
-        nIter = 1
+         # Set the reg list
+        reg_list = [0.01, 0.05, 0.1, 0.5, 1]
+#        
+        nIter = 5
         mcc_coeff_matrix = np.zeros((len(nCenters_list), nIter))
         mcc_coverage_matrix = np.zeros((len(nCenters_list), nIter))
         for i in range(nIter):
             mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
             mcc_coeff_matrix[:, i] = copy.deepcopy(mcc_coeff_list)
             mcc_coverage_matrix[:,i] = copy.deepcopy(mcc_coverage_list)
-#
-#####################################################################################################
-#np.max(design_matrix)
-#mcc_coeff_list
-#mcc_coverage_list
-#distance_matrix = SS.iof_matrix
-#mean = np.average(np.abs(distance_matrix))
-#if mean < 1:
-#    amplified_dist_matrix = distance_matrix / mean
-#else:
-#    amplified_dist_matrix = distance_matrix
-#
-#design_matrix = Design_matrix(amplified_dist_matrix, 'Thin_Plate_Spline')
-#coefficients =  np.zeros((data_dict['train_design_matrix'].shape[1]*2, 1))    
-#reg = 0.01 
-#loss, grad_coefficients = Loss_Softmax(data_dict['train_design_matrix'], data_dict['observed_train'], coefficients, reg)
-#loss
-#
-#mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
-#reg_coeff_list, reg_coverage_list, mcc_coeff, mcc_coverage =\
-# Cross_validation(data_dict, reg_list, nCenters_list, 'BFGS')
-# 
-#train_method = 'BFGS' 
-#test_design_matrix = copy.deepcopy(data_dict['validation_design_matrix'])
-#observed_test = copy.deepcopy(data_dict['observed_validation'])
-#train_distance_matrix = copy.deepcopy(data_dict['train_distance_matrix'])
-#train_design_matrix = copy.deepcopy(data_dict['train_design_matrix'])
-#
-#mcc_coeff = np.zeros((len(nCenters_list), len(reg_list)))
-#mcc_coverage = np.zeros(mcc_coeff.shape)
-#
-#train_para = {}
-#train_para['design_matrix'] = copy.deepcopy(data_dict['train_design_matrix'])
-#train_para['observed'] = copy.deepcopy(data_dict['observed_train'])
-#train_para['coefficients'] = np.random.randn(train_design_matrix.shape[1]*train_para['observed'].shape[1], 1)
-##train_para['coefficients'] = np.zeros((train_design_matrix.shape[1]*train_para['observed'].shape[1], 1))
-#train_para['loss_type'] = 'Softmax'
-#train_para['train_method'] = train_method
-#train_para['step_size'] = 1e-6
-#train_para['n_iterations'] = 10000
-#nCenters_list.sort(reverse=True)
-#train_para['nCenters_list'] = nCenters_list
-#
-#nCenters_list
-#
-##for i, reg in enumerate(reg_list):
-#i = 0
-#reg = 0.01  
-#train_para['reg'] = reg
-#train_para['design_matrix'] = copy.deepcopy(data_dict['train_design_matrix'])
-##        train_para['coefficients'] = np.random.randn(train_design_matrix.shape[1]*train_para['observed'].shape[1], 1)
-#train_para['coefficients'] = np.zeros((train_design_matrix.shape[1]*train_para['observed'].shape[1], 1))
-#
-#train_method = 'BFGS' 
-#test_design_matrix = copy.deepcopy(data_dict['validation_design_matrix'])
-#observed_test = copy.deepcopy(data_dict['observed_validation'])
-#train_distance_matrix = copy.deepcopy(data_dict['train_distance_matrix'])
-#train_design_matrix = copy.deepcopy(data_dict['train_design_matrix'])
-
-###########################################################################################
-#train_para = {}
-#train_para['design_matrix'] = copy.deepcopy(data_dict['train_design_matrix'])
-#train_para['observed'] = copy.deepcopy(data_dict['observed_train'])
-##train_para['coefficients'] = np.random.randn(train_para['design_matrix'].shape[1]*train_para['observed'].shape[1], 1)
-#train_para['coefficients'] = np.zeros((train_para['design_matrix'].shape[1]*train_para['observed'].shape[1], 1))
-#train_para['loss_type'] = 'Softmax' 
-#train_para['reg'] = 0.01 
-#    
-#nrow, _ = np.shape(train_para['coefficients'])
-#    
-#'''Give the initial Hessian H. The dimension of H is 
-#the same as the number of coefficients to be trained'''
-#H = np.eye(nrow)
-## Create an iteration counter
-## BFGS algorithm
-#loss, grad_coeff = Loss(train_para)
-#
-#  
-#p = - H.dot(grad_coeff) * 1e-4       
-## There should be both old and new coefficients in the train_para
-#train_para['coefficients_old'] = train_para['coefficients']
-#train_para['coefficients'] = p + train_para['coefficients_old']
-## Calculate the loss and gradient
-#new_loss, new_grad_coeff = Loss(train_para)        
-# Ramijo Back-tracking
-   
-#################################################################################
-#    s = p
-#    y = new_grad_coeff - grad_coeff
-#    r = (y.T).dot(s)
-#    I = np.eye(nrow)
-#    if r != 0:
-#        r = 1/r            
-#        H = (I - r*s.dot(y.T)).dot(H).dot(I - r*y.dot(s.T)) + r*s.dot(s.T)# Can be accelerated
-#    else:
-##            H = I 
-#        H = np.diag(np.random.uniform(0.5, 1, nrow))# try to eliminate the periodic dead loop
-#    # Update loss, grad_square and paramter
-#    loss = new_loss
-#    grad_coeff = new_grad_coeff
-#    grad_square = new_grad_coeff.T.dot(new_grad_coeff)            
-#    # print some values to monitor the training process 
-#    if n_iteration % 100 == 0:
-#        print('loss  ', loss, '    ','grad_square   ', grad_square)
-#    
-#    #Check if the training process is efficient!
-#    if n_iteration == 100:
-#        if np.log(grad_square_old) - np.log(grad_square) < 1:
-#            print('Inefficient training \n')
-#            break
-#        else:
-#            n_iteration = 0
+            # Monitor the process
+            key = dist_type+'_'+RBF
+            print(key)
+        BRE_results[dist_type+'_'+RBF] = copy.deepcopy((mcc_coeff_matrix, mcc_coverage_matrix))
         
-
-
-###################################################################################################### 
-
- 
-'''**********************************************************************************'''
-'''                  DO NOT FORGET TO SAVE THE RESULTS                '''
-  
-#os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results')
-##results_frame = pd.DataFrame(BRE_results)
-##results_frame.to_pickle('BRE_results_frame.pkl')
-#
-#df = pd.read_pickle('BRE_results_frame.pkl')
-#df.columns
-#
-#df['Hamming_Gaussian'][0]
-#df['Hamming_Gaussian'][1]
-#df['Hamming_Markov'][0]
-#df['Hamming_Markov'][1]
-#df['Hamming_Thin_Plate_Spline'][0]
-#df['Hamming_Thin_Plate_Spline'][1]
-#df['Hamming_Inverse_Multi_Quadric'][0]
-#df['Hamming_Inverse_Multi_Quadric'][1]
-#
-#df['IOF_Gaussian'][0]
-#df['IOF_Gaussian'][1]
-#df['IOF_Markov'][0]
-#df['IOF_Markov'][1]
-##df['IOF_Thin_Plate_Spline'][0]
-##df['IOF_Thin_Plate_Spline'][1]
-#df['IOF_Inverse_Multi_Quadric'][0]
-#df['IOF_Inverse_Multi_Quadric'][1]
-#
-#nCenters_list
-#
-#design_matrix = Design_matrix(amplified_dist_matrix, 'Gaussian')
-#        
-#
-#data_dict = Split_data(SS.hamming_matrix, design_matrix, observed_total, SS.hamming_matrix) 
-#
-## Generate the nCenters_list
-#nCenters_list = []
-#nCenters_total = data_dict['train_distance_matrix'].shape[1]
-#nCenters = math.floor(nCenters_total/2)
-#while not (nCenters > 15 and nCenters < 31):
-#    nCenters = math.floor(nCenters/2)
-#    nCenters_list.append(nCenters)
-#nCenters_list.extend([10, 8, 6, 4, 2])
-#
-#import matplotlib as plt
-#
-#RBF_list = ['Gaussian', 'Markov', 'Inverse_Multi_Quadric', 'Thin_Plate_Spline']
-
+        # Save the file from time to time
+        os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results')
+        results_frame = pd.DataFrame(BRE_results)
+        results_frame.to_pickle('BRE_results_frame.pkl')
+        
+        
 

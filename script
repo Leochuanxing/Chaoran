@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# You have to type 'python' infront of the file to be run
+
+
+
+
+python CenterSelection.py
+
+echo 'Shutdown the computer'
+shutdown
+
+
