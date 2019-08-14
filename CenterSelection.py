@@ -965,73 +965,87 @@ def Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
 
 '''#########################################################################'''
 '''************************PROCESSING THE DATA******************************'''
-
-
-'Softmax'
+def BRE():
+    complete, attributes, categories = Wrangling_BC()
+    SS = Distance_martix(complete, attributes, categories)
+    SS.Hamming_matrix()
+    SS.IOF_matrix()
+    SS.OF_matrix()
+    #SS.Burnaby_matrix()
+    SS.Eskin_matrix()# If the distance were not of great contrast. We multiply by a constant
+    #SS.Lin_matrix()
+    #
+    observed = SS.cate[['2.1']]
+    observed[observed['2.1'] == 2] = 0
+    observed[observed['2.1'] == 4] = 1
+    observed_total = np.float64(np.hstack((observed.values, 1 - observed.values)))
+    
+    dist_type_list = ['Hamming', 'IOF', 'OF', 'Eskin']
+    RBF_list = ['Gaussian', 'Markov', 'Thin_Plate_Spline', 'Inverse_Multi_Quadric']
+    
+    distance = copy.deepcopy(SS.hamming_matrix)
+    data_dict = Split_data(distance, distance, observed_total, SS.hamming_matrix) 
+    # Generate the nCenters_list
+    nCenters_list = []
+    nCenters_total = data_dict['train_design_matrix'].shape[1]
+    nCenters = math.floor(nCenters_total/2)
+    while nCenters > 2:
+        nCenters = math.floor(nCenters/2)
+        nCenters_list.append(nCenters)
+    nCenters_list            
+    BRE_results = {}
+    
+    for dist_type in dist_type_list:
+        for RBF in RBF_list:
+            if dist_type == 'Hamming':
+                distance_matrix = SS.hamming_matrix
+            elif dist_type == 'IOF':
+                distance_matrix = SS.iof_matrix
+            elif dist_type == 'OF':
+                distance_matrix =SS.of_matrix
+            elif dist_type == 'Eskin':
+                distance_matrix = SS.eskin_matrix
+            # Amplify the distance            
+            train_size = math.floor(distance_matrix.shape[0])
+            mean = np.average(np.abs(distance_matrix[:train_size,:train_size]))
+            amplified_dist_matrix = distance_matrix / mean
+            # Calculate the design matrix
+            design_matrix = Design_matrix(amplified_dist_matrix, RBF)         
+            # Load the data_dict
+            data_dict = Split_data(distance_matrix, design_matrix, observed_total, SS.hamming_matrix) 
+            
+             # Set the reg list
+            reg_list = [0.01, 0.05, 0.1, 0.5, 1]
+    #        
+            nIter = 5
+            mcc_coeff_matrix = np.zeros((len(nCenters_list), nIter))
+            mcc_coverage_matrix = np.zeros((len(nCenters_list), nIter))
+            for i in range(nIter):
+                mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
+                mcc_coeff_matrix[:, i] = copy.deepcopy(mcc_coeff_list)
+                mcc_coverage_matrix[:,i] = copy.deepcopy(mcc_coverage_list)
+                # Monitor the process
+                key = dist_type+'_'+RBF
+                print(key)
+            BRE_results[dist_type+'_'+RBF] = copy.deepcopy((mcc_coeff_matrix, mcc_coverage_matrix))
+            
+            # Save the file from time to time
+#            os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results')
+            results_frame = pd.DataFrame(BRE_results)
+#            results_frame.to_pickle('BRE_results_frame.pkl')
+            
+    return results_frame
+        
+#os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results')        
+#BRC_results = pd.read_pickle('BRE_results_frame.pkl')        
+#keys = BRC_results.keys()
+#len(keys)
+#keys
 #
-complete, attributes, categories = Wrangling_BC()
-SS = Distance_martix(complete, attributes, categories)
-SS.Hamming_matrix()
-SS.IOF_matrix()
-SS.OF_matrix()
-#SS.Burnaby_matrix()
-SS.Eskin_matrix()# If the distance were not of great contrast. We multiply by a constant
-#SS.Lin_matrix()
-#
-observed = SS.cate[['2.1']]
-observed[observed['2.1'] == 2] = 0
-observed[observed['2.1'] == 4] = 1
-observed_total = np.float64(np.hstack((observed.values, 1 - observed.values)))
-
-dist_type_list = ['Hamming', 'IOF', 'OF', 'Eskin']
-RBF_list = ['Gaussian', 'Markov', 'Thin_Plate_Spline', 'Inverse_Multi_Quadric']
-BRE_results = {}
-for dist_type in dist_type_list:
-    for RBF in RBF_list:
-        if dist_type == 'Hamming':
-            distance_matrix = SS.hamming_matrix
-        elif dist_type == 'IOF':
-            distance_matrix = SS.iof_matrix
-        elif dist_type == 'OF':
-            distance_matrix =SS.of_matrix
-        elif dist_type == 'Eskin':
-            distance_matrix = SS.eskin_matrix
-        # Amplify the distance            
-        train_size = math.floor(distance_matrix.shape[0])
-        mean = np.average(np.abs(distance_matrix[:train_size,:train_size]))
-        amplified_dist_matrix = distance_matrix / mean
-        # Calculate the design matrix
-        design_matrix = Design_matrix(amplified_dist_matrix, RBF)         
-        # Load the data_dict
-        data_dict = Split_data(distance_matrix, design_matrix, observed_total, SS.hamming_matrix) 
-#
-        # Generate the nCenters_list
-        nCenters_list = []
-        nCenters_total = data_dict['train_distance_matrix'].shape[1]
-        nCenters = math.floor(nCenters_total/2)
-        while nCenters > 2:
-            nCenters = math.floor(nCenters/2)
-            nCenters_list.append(nCenters)
-        
-         # Set the reg list
-        reg_list = [0.01, 0.05, 0.1, 0.5, 1]
-#        
-        nIter = 5
-        mcc_coeff_matrix = np.zeros((len(nCenters_list), nIter))
-        mcc_coverage_matrix = np.zeros((len(nCenters_list), nIter))
-        for i in range(nIter):
-            mcc_coeff_list, mcc_coverage_list = Validate_and_Test(data_dict, reg_list, nCenters_list, train_method = 'BFGS')
-            mcc_coeff_matrix[:, i] = copy.deepcopy(mcc_coeff_list)
-            mcc_coverage_matrix[:,i] = copy.deepcopy(mcc_coverage_list)
-            # Monitor the process
-            key = dist_type+'_'+RBF
-            print(key)
-        BRE_results[dist_type+'_'+RBF] = copy.deepcopy((mcc_coeff_matrix, mcc_coverage_matrix))
-        
-        # Save the file from time to time
-        os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results')
-        results_frame = pd.DataFrame(BRE_results)
-        results_frame.to_pickle('BRE_results_frame.pkl')
-        
-        
+#i = 16
+#BRC_results[keys[i]][0]
+#BRC_results[keys[i]][1]
+#nCenters_list
+#BRC_results['nCenters_reg_lists'] = [nCenters_list, reg_list]
+#BRC_results.to_pickle('BRE_results_frame.pkl')   
 
