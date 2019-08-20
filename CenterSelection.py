@@ -590,17 +590,7 @@ def One_step_reduce_centers(train_para, testing_design_matrix, nCenters):
             testing_design_matrix = np.delete(testing_design_matrix, ind_min, axis = 1)
             train_para['design_matrix'] = np.delete(train_para['design_matrix'], ind_min, axis = 1)
             
-    #    ratio = 3000/len(centers)
-#        if ncol > 1500 :
-#            termination = 1.5*ncol
-#        elif ncol<= 1500 and ncol >1000:
-#            termination =  ncol
-#        elif ncol<= 1000 and ncol>500: 
-#            termination = 10
-#        elif ncol <= 500:
-#            termination = ncol/1000            
-#        elif testing_design_matrix.shape[1] == nCenters:
-#            termination = 1e-3  
+
         termination = 1e-3
         '''Here, we want the coefficient is well trained at the number of centers we need'''
     #    termination =10* len(centers)  
