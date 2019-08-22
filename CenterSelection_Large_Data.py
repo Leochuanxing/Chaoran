@@ -97,19 +97,25 @@ Outputs:
 
 
 
-def Hamming_matrix(df_train, df_cc_right):
+def Hamming_matrix(df_train, df_cc_right, equal):
     ncol, _ = df_cc_right.shape
     nrow, natt = df_train.shape
     distance_matrix = np.zeros((nrow, ncol))
-    for i in range(nrow):
-        for j in range(ncol):
-            distance_matrix[i,j] = np.sum(df_train.iloc[i] != df_cc_right.iloc[j])
+    if equal:
+        for i in range(nrow):
+            for j in range(i, ncol):
+                distance_matrix[i,j] = np.sum(df_train.iloc[i] != df_cc_right.iloc[j])
+                distance_matrix[j,i] = distance_matrix[i,j]
+    else:
+        for i in range(nrow):
+            for j in range(ncol):
+                distance_matrix[i,j] = np.sum(df_train.iloc[i] != df_cc_right.iloc[j])
     distance_matrix /= natt       
     return distance_matrix
 
 
 
-def IOF_OF_matrix(df_train, df_cc_right, dict_element_dict, dict_log_freq_dict):
+def IOF_matrix(df_train, df_cc_right, dict_element_dict, dict_log_freq_dict, equal):
     
     n_cc_right, _ = df_cc_right.shape
     nrow, natt = df_train.shape
@@ -121,27 +127,88 @@ def IOF_OF_matrix(df_train, df_cc_right, dict_element_dict, dict_log_freq_dict):
     for att in att_list:
         log_freq_dict = dict_log_freq_dict[att]
         for i in range(nrow):
-            df_freq_train_log.loc[i, att] = log_freq_dict[df_train.loc[i,att]]
+            df_freq_train_log.loc[i, att] = log_freq_dict[df_train[att][i]]
         for j in range(n_cc_right):
-            df_freq_cc_right_log.loc[j, att] = log_freq_dict[df_cc_right.loc[j,att]]
+            df_freq_cc_right_log.loc[j, att] = log_freq_dict[df_cc_right[att][j]]
     # Calculate iof distance matrix
     iof_dist = np.zeros((nrow, n_cc_right))
-    of_dist = np.zeros_like(iof_dist)
-    logk = np.log(nrow, dtype=np.float32)
-    for i in range(nrow):
-        for j in range(n_cc_right):
-            indicator =1 - df_train.iloc[i].eq(df_cc_right.iloc[j])          
-            product_iof = np.float32(df_freq_train_log.iloc[i]*df_freq_cc_right_log.iloc[j])
-            iof_dist[i,j] = np.sum(indicator * product_iof)
-            
-            product_of = np.float32((df_freq_train_log.iloc[i]-logk)*(df_freq_cc_right_log.iloc[j]-logk))
-            of_dist[i,j] = np.sum(indicator * product_of)
+#    of_dist = np.zeros_like(iof_dist)
+#    logk = np.log(nrow, dtype=np.float32)
+    if not equal:
+        for i in range(nrow):
+            for j in range(n_cc_right):
+                indicator =1 - df_train.iloc[i].eq(df_cc_right.iloc[j])          
+                product_iof = np.float32(df_freq_train_log.iloc[i]*df_freq_cc_right_log.iloc[j])
+                iof_dist[i,j] = np.sum(indicator * product_iof)
+    else:
+        for i in range(nrow):
+            for j in range(i, n_cc_right):
+                indicator =1 - df_train.iloc[i].eq(df_cc_right.iloc[j])          
+                product_iof = np.float32(df_freq_train_log.iloc[i]*df_freq_cc_right_log.iloc[j])
+                iof_dist[i,j] = np.sum(indicator * product_iof)
+                iof_dist[j,i] = iof_dist[i,j]
+#            product_of = np.float32((df_freq_train_log.iloc[i]-logk)*(df_freq_cc_right_log.iloc[j]-logk))
+#            of_dist[i,j] = np.sum(indicator * product_of)
     iof_dist /= natt
+#    of_dist /= natt
+
+    return iof_dist
+
+def OF_matrix(df_train, df_cc_right, dict_element_dict, dict_log_freq_dict, equal):
+    
+    n_cc_right, _ = df_cc_right.shape
+    nrow, natt = df_train.shape
+    att_list = df_train.columns     
+    
+    df_freq_train_log = pd.DataFrame(0, index= list(range(nrow)), columns= df_train.columns)
+    df_freq_cc_right_log = pd.DataFrame(0, index = list(range(n_cc_right)), columns=df_cc_right.columns)
+    
+    for att in att_list:
+        log_freq_dict = dict_log_freq_dict[att]
+        for i in range(nrow):
+            df_freq_train_log.loc[i, att] = log_freq_dict[df_train[att][i]]
+        for j in range(n_cc_right):
+            df_freq_cc_right_log.loc[j, att] = log_freq_dict[df_cc_right[att][j]]
+    # Calculate iof distance matrix
+#    iof_dist = np.zeros((nrow, n_cc_right))
+    of_dist = np.zeros((nrow, n_cc_right))
+    logk = np.log(nrow, dtype=np.float32)
+    if not equal:
+        for i in range(nrow):
+            for j in range(n_cc_right):
+                indicator =1 - df_train.iloc[i].eq(df_cc_right.iloc[j])          
+    #            product_iof = np.float32(df_freq_train_log.iloc[i]*df_freq_cc_right_log.iloc[j])
+    #            iof_dist[i,j] = np.sum(indicator * product_iof)
+                
+                product_of = np.float32((df_freq_train_log.iloc[i]-logk)*(df_freq_cc_right_log.iloc[j]-logk))
+                of_dist[i,j] = np.sum(indicator * product_of)
+    else:
+        for i in range(nrow):
+            for j in range(i, n_cc_right):
+                indicator =1 - df_train.iloc[i].eq(df_cc_right.iloc[j])          
+    #            product_iof = np.float32(df_freq_train_log.iloc[i]*df_freq_cc_right_log.iloc[j])
+    #            iof_dist[i,j] = np.sum(indicator * product_iof)
+                
+                product_of = np.float32((df_freq_train_log.iloc[i]-logk)*(df_freq_cc_right_log.iloc[j]-logk))
+                of_dist[i,j] = np.sum(indicator * product_of)
+                of_dist[j,i] = of_dist[i,j]
+#    iof_dist /= natt
     of_dist /= natt
 
-    return iof_dist, of_dist
+    return  of_dist
 
-
+def Distance_matrix(row, column, distance_type, dict_element_dict, dict_log_freq_dict, equal = False):
+    # Calculate the distance matrix
+    if distance_type == 'Hamming':
+        dist = Hamming_matrix(row, column, equal)
+    elif distance_type == 'IOF':
+        dist = IOF_matrix(row, column,\
+                               dict_element_dict, dict_log_freq_dict, equal)
+    elif distance_type == 'OF':
+        dist = OF_matrix(row, column,\
+                               dict_element_dict, dict_log_freq_dict, equal)      
+    return dist
+    
 
 #    '''There should be at least 3 values for each attribute in order to use Lin_matrix'''
 #    def Lin_matrix(self):
@@ -548,6 +615,7 @@ def Initial_cc(train_para):
 def Reduce_centers(train_para):
     RBF = train_para['RBF']
     reduce_step = train_para['reduce_step']
+    df_train = train_para['df_train']
     df_cc_left = train_para['df_cc_left']
     nCenters_list = train_para['nCenters_list']
     nClass = train_para['nClass']
@@ -570,14 +638,16 @@ def Reduce_centers(train_para):
             coeff = np.hstack((coeff, np.zeros((nClass, d))))
             train_para['coeff'] = copy.deepcopy(coeff.reshape((-1, 1)))
         # Make up the design matrix
-            if distance_type == 'Hamming':
-                patch_dist = Hamming_matrix(df_train, df_cc_right.iloc[-d:])
-            elif distance_type == 'IOF':
-                patch_dist, _ = IOF_OF_matrix(df_train, df_cc_right,\
-                                              dict_element_dict, dict_log_freq_dict)
-            elif distance_type == 'OF':
-                _, patch_dist = IOF_OF_matrix(df_train, df_cc_right,\
-                                              dict_element_dict, dict_log_freq_dict)
+            patch_dist = Distance_matrix(df_train, df_cc_right.iloc[-d:], distance_type,\
+                                         dict_element_dict, dict_log_freq_dict, equal = False)
+#            if distance_type == 'Hamming':
+#                patch_dist = Hamming_matrix(df_train, df_cc_right.iloc[-d:])
+#            elif distance_type == 'IOF':
+#                patch_dist= IOF_matrix(df_train, df_cc_right,\
+#                                              dict_element_dict, dict_log_freq_dict)
+#            elif distance_type == 'OF':
+#                patch_dist = OF_matrix(df_train, df_cc_right,\
+#                                              dict_element_dict, dict_log_freq_dict)
                 
             patch_design = Design_matrix(patch_dist, RBF)
             train_para['design_matrix'] = np.hstack((train_para['design_matrix'], patch_design))
@@ -596,119 +666,172 @@ def Reduce_centers(train_para):
     return test_para
         
 # Load the train_para
-    
-sample_data = Small_sample(size = 500)
-df_train = sample_data.loc[:,['att1', 'att2', 'att3']]
-df_train = Fix_index(df_train)
-
-# First batch of train_para
-train_para = {}
-train_para['df_cc'] = df_train
-train_para['max_size'] = 20
-train_para['df_cc_left'] = df_train
-train_para['df_cc_right'] = pd.DataFrame()
-train_para['reduce_step'] = 1# The bigger the harder to train
-train_para['RBF'] = 'Gaussian'
-
-df_cc_right, df_cc_left = Initial_cc(train_para) 
-train_para['df_cc_left'] = df_cc_left
-train_para['df_cc_right'] = df_cc_right 
-df_cc_right.shape
-df_cc_right
-df_cc_left.shape
-hamming_dist = Hamming_matrix(df_train, df_cc_right)
-hamming_dist.shape
-# Calculate design matrix
-design_matrix = Design_matrix(hamming_dist, RBF=train_para['RBF'])
-train_para['design_matrix'] = design_matrix
-design_matrix.shape
-
-dict_element_dict, dict_log_freq_dict = Frequency_distinct(df_train)
-#iof_dist, of_dist = IOF_OF_matrix(df_train, df_cc_right, dict_element_dict, dict_log_freq_dict)
-
-train_para['nCenters_list']= [5, 3]
-train_para['nClass'] = 2
-train_para['distance_type'] = 'Hamming'
-train_para['dict_element_dict'] = dict_element_dict
-train_para['dict_log_freq_dict'] = dict_log_freq_dict
-train_para['train_method'] = 'BFGS'
-train_para['coeff'] = np.zeros((design_matrix.shape[1]*train_para['nClass'], 1))
-train_para['reg'] = 0.1
-train_para['loss_type'] = 'Softmax'
-# Calculate the observed values
-sample_data['label']
-observed = sample_data[['label']]
-observed[observed['label'] == 'y1'] = 0
-observed[observed['label'] == 'y2'] = 1
-observed_total = np.float64(np.hstack((observed.values, 1 - observed.values)))
-observed_total
-observed
-train_para['observed'] = observed_total
-train_para['coeff'].shape
-train_para['design_matrix'].shape
-
-test_para = Reduce_centers(train_para)
-
+#    
+#sample_data = Small_sample(size = 5000)
+#df_train = sample_data.loc[:,['att1', 'att2', 'att3']]
+#df_train = Fix_index(df_train)
+#
+## First batch of train_para
+#train_para = {}
+#train_para['df_cc'] = df_train
+#train_para['max_size'] = 20
+#train_para['df_cc_left'] = df_train
+#train_para['df_cc_right'] = pd.DataFrame()
+#train_para['reduce_step'] = 1# The bigger the harder to train
+#train_para['RBF'] = 'Gaussian'
+#
+#df_cc_right, df_cc_left = Initial_cc(train_para) 
+#train_para['df_cc_left'] = df_cc_left
+#train_para['df_cc_right'] = df_cc_right 
+#df_cc_right.shape
+#df_cc_right
+#df_cc_left.shape
+#'''Load the design matrix according to different matrix type'''
+#hamming_dist = Hamming_matrix(df_train, df_cc_right)
+#hamming_dist.shape
+## Calculate design matrix
+#design_matrix = Design_matrix(hamming_dist, RBF=train_para['RBF'])
+#train_para['design_matrix'] = design_matrix
+#design_matrix.shape
+#
+#dict_element_dict, dict_log_freq_dict = Frequency_distinct(df_train)
+##iof_dist, of_dist = IOF_OF_matrix(df_train, df_cc_right, dict_element_dict, dict_log_freq_dict)
+#
+#train_para['nCenters_list']= [5, 3]
+#train_para['nClass'] = 2
+#train_para['distance_type'] = 'Hamming'
+#train_para['dict_element_dict'] = dict_element_dict
+#train_para['dict_log_freq_dict'] = dict_log_freq_dict
+#train_para['train_method'] = 'BFGS'
+#train_para['coeff'] = np.zeros((design_matrix.shape[1]*train_para['nClass'], 1))
+#train_para['reg'] = 0.1
+#train_para['loss_type'] = 'Softmax'
+## Calculate the observed values
+#sample_data['label']
+#observed = sample_data[['label']]
+#observed[observed['label'] == 'y1'] = 0
+#observed[observed['label'] == 'y2'] = 1
+#observed_total = np.float64(np.hstack((observed.values, 1 - observed.values)))
+#observed_total
+#observed
+#train_para['observed'] = observed_total
+#train_para['coeff'].shape
+#train_para['design_matrix'].shape
+#
+#test_para = Reduce_centers(train_para)
+#
 #test_para['df_Centers_list'][1].shape
 #test_para['coeff_list'][1].shape
-#test_para['df_Centers_list'][1]
+#test_para['df_Centers_list'][0]
 #test_para['coeff_list'][1]
+
 '''
 $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+        THE COVERAGE CENTER SELECTION
+        
+        
+CS_coverage_all: a function to find the oder of the centers to be eliminated and the corresponding 
+                cutoff distances
+Inputs:
+    distance_matrix
+    
+Outputs:
+    eliminated: a list, gives the indices, corresponding to the rows, to be removed, so that the leftovers
+                can be used as centers
+    radius: a list, gives the cutoff distances that corresponding to the elements in the eliminated.
+    
+For example:
+    eliminated = [1,2,3], radius = [1, 1, 2]
+    Means: to remove center corresponding to row 1, the cutoff distance need to be 1.
+           to remove center corresponding to row 2, the cutoff distance need to be 1.
+           to remove center corresponding to row 3, the cutoff distance need to be 2.
 '''
-#RBF = train_para['RBF']
-#design_matrix = train_para['design_matrix']
-#reduce_step = train_para['reduce_step']
-#df_cc_left = train_para['df_cc_left']
-#nCenters_list = train_para['nCenters_list']
-#nClass = train_para['nClass']
-#distance_type = train_para['distance_type']
-#dict_element_dict = train_para['dict_element_dict']
-#dict_log_freq_dict = train_para['dict_log_freq_dict']
-##
-#    
-#while df_cc_left.shape[0] != 0:
-#    for i in range(reduce_step):
-#        train_para = One_step_reduce_centers(train_para)
-#        # Make up the lost cc
-#        df_cc_right, df_cc_left = Initial_cc(train_para)
-#        train_para['df_cc_right'] = df_cc_right
-#        train_para['df_cc_left'] = df_cc_left
-#        # make up the coefficients before the next round of reduction
-#        coeff = train_para['coeff'].reshape((nClass, -1))
-#        d = df_cc_right.shape[0] - coeff.shape[1] 
-#        if d > 0:
-#            coeff = np.hstack((coeff, np.zeros((nClass, d))))
-#            train_para['coeff'] = copy.deepcopy(coeff.reshape((-1, 1)))
-#        # Make up the design matrix
-#            if distance_type == 'Hamming':
-#                patch_dist = Hamming_matrix(df_train, df_cc_right.iloc[-d:])
-#            elif distance_type == 'IOF':
-#                patch_dist, _ = IOF_OF_matrix(df_train, df_cc_right,\
-#                                              dict_element_dict, dict_log_freq_dict)
-#            elif distance_type == 'OF':
-#                _, patch_dist = IOF_OF_matrix(df_train, df_cc_right,\
-#                                              dict_element_dict, dict_log_freq_dict)
-#                
-#            patch_design = Design_matrix(patch_dist, RBF)
-#            train_para['design_matrix'] = np.hstack((train_para['design_matrix'], patch_design))
+def CS_coverage_all(distance_matrix):
+    l = list(np.ndenumerate(distance_matrix))
+    # get rid of the diagonal elements
+    l_sub = [x for x in l if x[0][0] != x[0][1]]
+    # arrange the distance in the increasing order
+    l_sub.sort(key = lambda x:x[1])
+
+    eliminated = []; radius = []
+    while l_sub !=[]:
+        eliminated.append(l_sub[0][0][1])
+        radius.append(l_sub[0][1])
+        # update l_sub
+        l_sub = [x for x in l_sub if x[0][0] != l_sub[0][0][1] and x[0][1] != l_sub[0][0][1]]
+        
+    eliminated.append(0)# The first sample will always be selected
+        
+    return eliminated, radius
 
 
+def Estimate_radius(sub_df_train, distance_type, first_nCenters,\
+                    dict_element_dict, dict_log_freq_dict):
+    
+#    sub_dict_element_dict, sub_dict_log_freq_dict = Frequency_distinct(sub_df_train)
+    # Calculate the distance matrix
+    print('Calculating the sub_dist matrix')
+    sub_dist = Distance_matrix(sub_df_train, sub_df_train, distance_type,\
+                               dict_element_dict, dict_log_freq_dict, equal = True)
+    # Generate the required radius list
+    eliminated, radius = CS_coverage_all(sub_dist)
+    
+    first_radius = radius[-first_nCenters]
+    
+    return first_radius
+    
+'''Select the centers according to the radius list returned in Estimate_radius'''    
+def CS_coverage(df_train, first_radius, distance_type,\
+                dict_element_dict, dict_log_freq_dict, nCenters_list):
+    max_centers = df_train.iloc[[0], :]
+    nrow, _ = df_train.shape
+    for i in range(nrow):
+        print('test the   ', i, '   for centers')
+        dist = Distance_matrix(max_centers, df_train.iloc[[i], :], distance_type,\
+                               dict_element_dict, dict_log_freq_dict, equal = False)
 
+        if (dist >= first_radius).all(axis = None):
+           max_centers = max_centers.append(df_train.iloc[[i], :], ignore_index=False)
+           
+    # Begin with the max_centers
+    print('max_centers    ', max_centers.shape[0])
+    dist_mat = Distance_matrix(max_centers, max_centers, distance_type,\
+                               dict_element_dict, dict_log_freq_dict, equal = True)
+    eliminated, radius = CS_coverage_all(dist_mat)
+    
+    # Select according to radius
+    centers_list = []; centers_ind_list = []
+    for nCenters in nCenters_list:
+        center_ind = [eliminated[n] for n in range(-nCenters, 0)]
+        centers_ind_list.append(copy.deepcopy(center_ind))
+        centers_list.append(max_centers.iloc[center_ind, :])
+    
+    return centers_list
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+def Coverage_train(train_para, first_radius, dict_element_dict, dict_log_freq_dict):
+    df_train = train_para['df_train']
+    distance_type = train_para['distance_type']
+    nCenters_list = train_para['nCenters_list']
+    RBF = train_para['RBF']
+    df_Centers_list = CS_coverage(df_train, first_radius, distance_type,\
+                dict_element_dict, dict_log_freq_dict, nCenters_list)
+    # Calculate the design matrix
+    dist = Distance_matrix(df_train, df_Centers_list[0], distance_type, dict_element_dict, dict_log_freq_dict, equal=False)
+    design_dist = Design_matrix(dist, RBF)
+    
+    test_para = {}
+    test_para['coeff_list'] = []
+    for nCenters in nCenters_list:
+        design_matrix = design_dist[:, list(range(-nCenters, 0))]
+        train_para['design_matrix'] = design_matrix
+        # Train
+        train_para, _ = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-4, termination = 1e-2)
+        # Load to test para
+        test_para['coeff_list'].append(copy.deepcopy(train_para['coeff']))
+    
+    test_para['nCenters_list'] = train_para['nCenters_list']
+    test_para['RBF'] = RBF
+    test_para['distance_type'] = distance_type
+    test_para['df_Centers_list'] = df_Centers_list
+    
+    return df_Centers_list
