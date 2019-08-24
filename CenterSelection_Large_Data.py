@@ -491,7 +491,7 @@ def Train_GD(train_para):
     return train_para, loss
 
 
-def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-4, termination = 1e-2):   
+def Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-3):   
     
     nrow, _ = np.shape(train_para['coeff']) 
     max_design = np.max(np.abs(train_para['design_matrix']))       
@@ -628,11 +628,24 @@ def Reduce_centers(train_para):
         print('Left     ', df_cc_left.shape[0])# Print how many left
         for i in range(reduce_step):
             train_para, loss = One_step_reduce_centers(train_para)
-#            
-#            if attach:
-#                attach_loss = loss
-#            else:
-#                
+            
+        if not attach:
+            attach_not_loss = loss
+            df_cc_right_not = copy.deepcopy(train_para['df_cc_right'])
+            design_matrix_not = copy.deepcopy(train_para['design_matrix'])
+            coeff_not = copy.deepcopy(train_para['coeff'])
+        else:
+            if loss > attach_not_loss:# Not accept
+                train_para['df_cc_right'] = copy.deepcopy(df_cc_right_not)
+                train_para['design_matrix'] = copy.deepcopy(design_matrix_not)
+                train_para['coeff'] = copy.deepcopy(coeff_not)
+                print('not accept')
+            else:# accept
+                attach_not_loss = loss
+                df_cc_right_not = copy.deepcopy(train_para['df_cc_right'])
+                design_matrix_not = copy.deepcopy(train_para['design_matrix']) 
+                coeff_not = copy.deepcopy(train_para['coeff'])
+                print('accept')
         # Make up the lost cc
         df_cc_right, df_cc_left = Initial_cc(train_para)
         train_para['df_cc_right'] = df_cc_right
@@ -643,19 +656,12 @@ def Reduce_centers(train_para):
         # When attach we can make sure the loss is decreasing
         
         if d > 0:
+            attach = True
             coeff = np.hstack((coeff, np.zeros((nClass, d))))
             train_para['coeff'] = copy.deepcopy(coeff.reshape((-1, 1)))
         # Make up the design matrix
             patch_dist = Distance_matrix(df_train, df_cc_right.iloc[-d:], distance_type,\
                                          dict_element_dict, dict_log_freq_dict, equal = False)
-#            if distance_type == 'Hamming':
-#                patch_dist = Hamming_matrix(df_train, df_cc_right.iloc[-d:])
-#            elif distance_type == 'IOF':
-#                patch_dist= IOF_matrix(df_train, df_cc_right,\
-#                                              dict_element_dict, dict_log_freq_dict)
-#            elif distance_type == 'OF':
-#                patch_dist = OF_matrix(df_train, df_cc_right,\
-#                                              dict_element_dict, dict_log_freq_dict)
                 
             patch_design = Design_matrix(patch_dist, RBF)
             train_para['design_matrix'] = np.hstack((train_para['design_matrix'], patch_design))
@@ -669,10 +675,11 @@ def Reduce_centers(train_para):
     test_para['nCenters_list'] = nCenters_list
     test_para['coeff_list'] = []
     for nCenters in nCenters_list:
+#        print(train_para['df_cc_right'].shape[0])
         while train_para['df_cc_right'].shape[0] > nCenters:
-            train_para = One_step_reduce_centers(train_para)
+            train_para, _ = One_step_reduce_centers(train_para)
         # train again befor record the coefficients
-        train_para, _ = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-4, termination = 1e-3)
+        train_para, _ = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-3)
         test_para['df_Centers_list'].append(copy.deepcopy(train_para['df_cc_right']))
         test_para['coeff_list'].append(copy.deepcopy(train_para['coeff']))
         
@@ -782,7 +789,7 @@ def Coverage_train(train_para, first_radius, dict_element_dict, dict_log_freq_di
         # Initiate the coefficients
         train_para['coeff'] = np.zeros((nCenters*nClass, 1))
         # Train
-        train_para, _ = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-4, termination = 1e-2)
+        train_para, _ = Train_RBFN_BFGS(train_para, rho=0.8, c = 1e-3, termination = 1e-3)
         # Load to test para
         test_para['coeff_list'].append(copy.deepcopy(train_para['coeff']))
     
@@ -864,7 +871,7 @@ def Test_MCC(test_para):
     return test_para
 '''#########################################################################################'''
 
-def Main(df_train, df_test, test_observed, train_observed, nClass):
+def Main(df_train, df_test, test_observed, train_observed, nClass, reg):
     # Load the basic train_para
     df_train = Fix_index(df_train)
     dict_element_dict, dict_log_freq_dict = Frequency_distinct(df_train)
@@ -879,10 +886,10 @@ def Main(df_train, df_test, test_observed, train_observed, nClass):
     train_para['distance_type'] = 'Hamming'
     train_para['loss_type'] = 'Softmax'
     train_para['train_method'] = 'BFGS'
-    train_para['reg'] = 0.1
+    train_para['reg'] = reg
     
     # Parameters about selecting centers
-    train_para['nCenters_list'] = [40, 20, 10, 5, 2]
+    train_para['nCenters_list'] = [50, 20, 10, 5, 2]
     
     # Load the training data    
     train_para['df_train'] = df_train
@@ -896,7 +903,7 @@ def Main(df_train, df_test, test_observed, train_observed, nClass):
     '''Those parameters is only for coverage method'''
     '''*************************************************************************''' 
     # Load the para for Coverage center selection
-    first_nCenters = 40; nSub = 1000
+    first_nCenters = 50; nSub = 500
     sub_df_train = df_train.iloc[list(range(nSub)), :]
     first_radius = Estimate_radius(sub_df_train, train_para['distance_type'], first_nCenters,\
                     dict_element_dict, dict_log_freq_dict)
@@ -988,50 +995,50 @@ def Wrangling_BC():
     
     return complete, attributes, categories
 
-complete, attributes, categories = Wrangling_BC()
-complete.shape
-
-test = complete.iloc[list(range(140))]
-train = complete.iloc[list(range(140, 682))]
-
-df_test = test[attributes]
-
-df_train = train.loc[:, attributes]
-df_train = Fix_index(df_train)
-
-test_observed = test[categories]
-test_observed[test_observed['2.1'] == 2] = 0
-test_observed[test_observed['2.1'] == 4] = 1
-test_observed = np.float64(np.hstack((test_observed.values, 1 - test_observed.values)))
-
-train_observed = train[categories]
-train_observed[train_observed['2.1'] == 2] = 0
-train_observed[train_observed['2.1'] == 4] = 1
-train_observed = np.float64(np.hstack((train_observed.values, 1 - train_observed.values)))
-
-#df_test.shape
-#df_train.shape
-#test_observed.shape
-#train_observed.shape
-
-test_para_coverage, test_para_coefficients= Main(df_train, df_test, test_observed, train_observed)
-
-test_para_coefficients.keys()
-test_para_coefficients['df_Centers_list']
-test_para_coefficients['mcc_list']
-test_para_coefficients['c_matrix_list']
-#test_para_coefficients_new['df_Centers_list']
-#test_para_coefficients_new['mcc_list']
-#test_para_coefficients_new['c_matrix_list']
+#complete, attributes, categories = Wrangling_BC()
+#complete.shape
 #
-test_para_coverage['coeff_list']
-test_para_coverage['nCenters_list']
-test_para_coverage['RBF']
-test_para_coverage['distance_type']
-test_para_coverage['df_Centers_list']
-test_para_coverage['design_matrix_list'][0].shape
-test_para_coverage['mcc_list']
-test_para_coverage['c_matrix_list']
+#test = complete.iloc[list(range(140))]
+#train = complete.iloc[list(range(140, 682))]
+#
+#df_test = test[attributes]
+#
+#df_train = train.loc[:, attributes]
+#df_train = Fix_index(df_train)
+#
+#test_observed = test[categories]
+#test_observed[test_observed['2.1'] == 2] = 0
+#test_observed[test_observed['2.1'] == 4] = 1
+#test_observed = np.float64(np.hstack((test_observed.values, 1 - test_observed.values)))
+#
+#train_observed = train[categories]
+#train_observed[train_observed['2.1'] == 2] = 0
+#train_observed[train_observed['2.1'] == 4] = 1
+#train_observed = np.float64(np.hstack((train_observed.values, 1 - train_observed.values)))
+#
+##df_test.shape
+##df_train.shape
+##test_observed.shape
+##train_observed.shape
+#
+#test_para_coverage, test_para_coefficients= Main(df_train, df_test, test_observed, train_observed)
+#
+#test_para_coefficients.keys()
+#test_para_coefficients['df_Centers_list']
+#test_para_coefficients['mcc_list']
+#test_para_coefficients['c_matrix_list']
+##test_para_coefficients_new['df_Centers_list']
+##test_para_coefficients_new['mcc_list']
+##test_para_coefficients_new['c_matrix_list']
+##
+#test_para_coverage['coeff_list']
+#test_para_coverage['nCenters_list']
+#test_para_coverage['RBF']
+#test_para_coverage['distance_type']
+#test_para_coverage['df_Centers_list']
+#test_para_coverage['design_matrix_list'][0].shape
+#test_para_coverage['mcc_list']
+#test_para_coverage['c_matrix_list']
 ##############################################################################
 '''TEST THE ABOVE ON BREAST CANCER DATA'''
 def Wrangle_NUR():
@@ -1041,8 +1048,11 @@ def Wrangle_NUR():
     data.columns = ['parents', 'has_nur', 'form', 'children', 'housing', 'finance', 'social', 'health', 'class']
     att = ['parents', 'has_nur', 'form', 'children', 'housing', 'finance', 'social', 'health']
     
-    classes = list(set(data['class']))
-    nClass = len(classes)
+#    classes = ['not_recom', 'priority', 'spec_prior']
+    classes = ['priority', 'spec_prior']
+    nClass = len(classes) + 1
+    # Shuffle the data
+    data = data.sample(frac = 1)
     # Split into train and test
     train = data.iloc[list(range(10000))]
     test = data.iloc[list(range(10000, data.shape[0]))]
@@ -1056,18 +1066,16 @@ def Wrangle_NUR():
     for ind, cla in enumerate(classes):
         train_observed[:, ind] = train['class'].eq(cla) * 1
         test_observed[:, ind] = test['class'].eq(cla) * 1
+    train_observed[:, nClass-1] = (1- np.sum(train_observed, axis= 1, keepdims=True)).T
+    test_observed[:, nClass-1] = (1 - np.sum(test_observed, axis = 1, keepdims=True)).T
     
     return df_train, df_test, train_observed, test_observed, nClass
 # Do the work
 df_train, df_test, train_observed, test_observed, nClass = Wrangle_NUR()
-df_train = df_train.iloc[list(range(3000))]
-df_test = df_test.iloc[list(range(600))]
-train_observed = train_observed[:3000, :]
-test_observed = test_observed[:600, :]
-train_observed.shape
-test_observed.shape
-df_train.shape
-df_test.shape
+#df_train = df_train.iloc[list(range(2000))]
+#df_test = df_test.iloc[list(range(400))]
+#train_observed = train_observed[:2000, :]
+#test_observed = test_observed[:400, :]
 
 test_para_coverage, test_para_coefficients=\
  Main(df_train, df_test, test_observed, train_observed, nClass)
@@ -1077,37 +1085,26 @@ test_para_coefficients.keys()
 test_para_coefficients['mcc_list']
 test_para_coverage['mcc_list'] 
 test_para_coverage['c_matrix_list'] 
- 
+
+
+test_para_coefficients['df_Centers_list'][0].index
+test_para_coverage['df_Centers_list'][0].index
+
+# Save the results
+NUR_results = {}
+NUR_results['cov_centers'] = test_para_coverage['df_Centers_list']
+NUR_results['coeff_centers'] = test_para_coefficients['df_Centers_list']
+NUR_results['cov_mcc_list'] = test_para_coverage['mcc_list']
+NUR_results['coeff_mcc_list'] = test_para_coefficients['mcc_list']
+NUR_results['nCenters_list'] = test_para_coverage['nCenters_list']
+
+os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results/NUR')
+RES = pd.DataFrame(NUR_results)
+RES.to_pickle('NUR_results.pkl')
+# 
 
  
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
+#os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results/BRE')
+#r = pd.read_pickle('BRE_results_frame.pkl') 
+#r.columns
+#r['Hamming_Gaussian'][0]
