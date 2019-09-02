@@ -871,7 +871,8 @@ def Test_MCC(test_para):
     return test_para
 '''#########################################################################################'''
 
-def Main(df_train, df_test, test_observed, train_observed, nClass, reg):
+def Main(df_train, df_test, test_observed, train_observed, nClass, reg_coverage, reg_coeff, nCenters_list,
+         RBF, dist_type):
     # Load the basic train_para
     df_train = Fix_index(df_train)
     dict_element_dict, dict_log_freq_dict = Frequency_distinct(df_train)
@@ -882,14 +883,14 @@ def Main(df_train, df_test, test_observed, train_observed, nClass, reg):
     '''Those parameters is common to both coverage method and coefficient method'''
     '''*************************************************************************'''    
     # Adjustable parameters for different RBF, distance_type loss_type, train_method and reg
-    train_para['RBF'] = 'Gaussian'
-    train_para['distance_type'] = 'Hamming'
+    train_para['RBF'] = RBF
+    train_para['distance_type'] = dist_type
     train_para['loss_type'] = 'Softmax'
     train_para['train_method'] = 'BFGS'
-    train_para['reg'] = reg
+   
     
     # Parameters about selecting centers
-    train_para['nCenters_list'] = [50, 20, 10, 5, 2]
+    train_para['nCenters_list'] = nCenters_list
     
     # Load the training data    
     train_para['df_train'] = df_train
@@ -903,10 +904,11 @@ def Main(df_train, df_test, test_observed, train_observed, nClass, reg):
     '''Those parameters is only for coverage method'''
     '''*************************************************************************''' 
     # Load the para for Coverage center selection
-    first_nCenters = 50; nSub = 500
+    first_nCenters = 64; nSub = 1500
     sub_df_train = df_train.iloc[list(range(nSub)), :]
     first_radius = Estimate_radius(sub_df_train, train_para['distance_type'], first_nCenters,\
                     dict_element_dict, dict_log_freq_dict)
+    train_para['reg'] = reg_coverage
     '''*************************************************************************'''
 
 
@@ -940,6 +942,7 @@ def Main(df_train, df_test, test_observed, train_observed, nClass, reg):
     '''Load the train_para for coefficients method'''
     '''*************************************************************************'''  
     start_time = time.time()
+    train_para['reg'] = reg_coeff
     train_para['max_size'] = train_para['nCenters_list'][0] + 1 # The maximum size of the selected centers, 
 #    train_para['max_size'] = 100
     train_para['df_cc_left'] = df_train
@@ -1070,41 +1073,116 @@ def Wrangle_NUR():
     test_observed[:, nClass-1] = (1 - np.sum(test_observed, axis = 1, keepdims=True)).T
     
     return df_train, df_test, train_observed, test_observed, nClass
-# Do the work
-df_train, df_test, train_observed, test_observed, nClass = Wrangle_NUR()
-#df_train = df_train.iloc[list(range(2000))]
-#df_test = df_test.iloc[list(range(400))]
-#train_observed = train_observed[:2000, :]
-#test_observed = test_observed[:400, :]
-
-test_para_coverage, test_para_coefficients=\
- Main(df_train, df_test, test_observed, train_observed, nClass)
- 
- 
-test_para_coefficients.keys()
-test_para_coefficients['mcc_list']
-test_para_coverage['mcc_list'] 
-test_para_coverage['c_matrix_list'] 
 
 
-test_para_coefficients['df_Centers_list'][0].index
-test_para_coverage['df_Centers_list'][0].index
+def NUR_main():
+    os.chdir('/home/leo/Documents/Project_SelectCenters/DATA/Nursery')
+    data = pd.read_csv('nursery.data')
+    # Change the column name
+    data.columns = ['parents', 'has_nur', 'form', 'children', 'housing', 'finance', 'social', 'health', 'class']
+    att = ['parents', 'has_nur', 'form', 'children', 'housing', 'finance', 'social', 'health']
+    
+    #    classes = ['not_recom', 'priority', 'spec_prior']
+    classes = ['priority', 'spec_prior']
+    nClass = len(classes) + 1
+    # Shuffle the data
+    data = data.sample(frac = 1)
+#    data = data.iloc[list(range(500))]# This is for small batch test
+    # Split into train and test
+    n_train = math.floor(data.shape[0]/4 * 3)
+    train = data.iloc[list(range(n_train))]
+    test = data.iloc[list(range(n_train, data.shape[0]))]
+    
+    df_train = train[att]
+    df_test = test[att]
+    
+    # Generate the observed
+    train_observed = np.zeros((df_train.shape[0], nClass))
+    test_observed = np.zeros((df_test.shape[0], nClass))
+    
+    for inde, cla in enumerate(classes):
+        train_observed[:, inde] = train['class'].eq(cla) * 1
+        test_observed[:, inde] = test['class'].eq(cla) * 1
+        
+    train_observed[:, nClass-1] = (1- np.sum(train_observed, axis= 1, keepdims=True)).T
+    test_observed[:, nClass-1] = (1 - np.sum(test_observed, axis = 1, keepdims=True)).T
+    
+    # Split the train into cross_train and cross_test
+    n_cross_train = math.floor(train.shape[0]/3 * 2)
+    cross_train = train.iloc[list(range(n_cross_train))]
+    cross_test = train.iloc[list(range(n_cross_train, train.shape[0]))]
+    
+    df_cross_train = cross_train[att]
+    df_cross_test = cross_test[att]
+    
+    cross_train_observed = train_observed[list(range(n_cross_train)),:]
+    cross_test_observed = train_observed[list(range(n_cross_train, train.shape[0])), :]
+    
+    
+    
+    # Do the cross validation
+    nCenters_list=[64,32,8, 4, 2]
+    reg_list = [0.01, 0.05, 0.2] 
+    RBF_list = ['Gaussian', 'Markov', 'Inverse_Multi_Quadric', 'Thin_Plate_Spline']
+    dist_type_list = ['Hamming', 'IOF', 'OF']
+    
+    for RBF in RBF_list:
+        for dist_type in dist_type_list:
+            cross_mcc_coverage = np.zeros((len(reg_list), len(nCenters_list)))
+            cross_mcc_coefficients = np.zeros((len(reg_list), len(nCenters_list)))
+            for ind, reg in enumerate(reg_list):
+                test_para_coverage, test_para_coefficients=\
+                 Main(df_cross_train, df_cross_test, cross_test_observed, cross_train_observed, nClass, reg,reg, nCenters_list,\
+                      RBF, dist_type)
+                 
+                cross_mcc_coefficients[ind, :]=np.array(test_para_coefficients['mcc_list']).reshape((1, -1))
+                cross_mcc_coverage[ind, :]=np.array(test_para_coverage['mcc_list']).reshape((1, -1)) 
+            
+            # Do the test with the best parameter
+            mcc_list_coverage = []; mcc_list_coeff = []
+            nCenter_reg_list_coverage = []; nCenter_reg_list_coeff = []
+            results = {}# Load the results to this dictionary
+            for index, nCenters in enumerate(nCenters_list):
+                reg_coeff =reg_list[np.argmax(cross_mcc_coefficients[:, index])]
+                reg_coverage = reg_list[np.argmax(cross_mcc_coverage[:, index])]
+                
+                nCenter_reg_list_coeff.append([nCenters, reg_coeff])
+                nCenter_reg_list_coverage.append([nCenters, reg_coverage])
+                
+                test_para_coverage, test_para_coefficients=\
+                Main(df_train, df_test, test_observed, train_observed, nClass, reg_coverage, reg_coeff, [nCenters], 
+                     RBF, dist_type)
+                
+                mcc_list_coverage.append(copy.deepcopy(test_para_coverage['mcc_list'][0]))
+                mcc_list_coeff.append(copy.deepcopy(test_para_coefficients['mcc_list'][0]))        
+                
+                # Load the results 
+                results['mcc_list_coverage'] = mcc_list_coverage
+                results['mcc_list_coeff'] = mcc_list_coeff
+                results['nCenter_reg_list_coverage'] = nCenter_reg_list_coverage
+                results['nCenter_reg_list_coeff'] = nCenter_reg_list_coeff
+                
+                # Save the results for each calculation in case it may collapse somewhere
+                os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results/NUR')
+                RES = pd.DataFrame(results)
+                RES.to_pickle(RBF+'_'+dist_type+'_'+'NUR_results.pkl')
+    
+    return
 
-# Save the results
-NUR_results = {}
-NUR_results['cov_centers'] = test_para_coverage['df_Centers_list']
-NUR_results['coeff_centers'] = test_para_coefficients['df_Centers_list']
-NUR_results['cov_mcc_list'] = test_para_coverage['mcc_list']
-NUR_results['coeff_mcc_list'] = test_para_coefficients['mcc_list']
-NUR_results['nCenters_list'] = test_para_coverage['nCenters_list']
+if __name__ == '__main__':   
+    NUR_main()
 
-os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results/NUR')
-RES = pd.DataFrame(NUR_results)
-RES.to_pickle('NUR_results.pkl')
-# 
-
- 
-#os.chdir('/home/leo/Documents/Project_SelectCenters/Code/Results/BRE')
-#r = pd.read_pickle('BRE_results_frame.pkl') 
+#r = pd.read_pickle('NUR_results.pkl') 
+#r1 = pd.read_pickle('NUR_results1.pkl') 
 #r.columns
-#r['Hamming_Gaussian'][0]
+#r['mcc_list_coverage']
+#r['mcc_list_coeff']
+#r['nCenter_reg_list_coverage']
+#r['nCenter_reg_list_coeff']
+#
+#r1['mcc_list_coverage']
+#r1['mcc_list_coeff']
+#r1['nCenter_reg_list_coverage']
+#r1['nCenter_reg_list_coeff']
+
+
